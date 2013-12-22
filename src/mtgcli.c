@@ -51,6 +51,8 @@ void print_cards(FILE *outf,int *arr, int len){
 		ps.id=arr[i+1];
 		sqlite3_exec(cdb,query,print_card_cb,&ps,NULL);
 	}
+	if(ps.count%CARD_PER_LINE>0)
+		fprintf(outf,"\n");
 }
 
 void* run_low(void *arg){
@@ -63,6 +65,7 @@ void* run_low(void *arg){
 	int inarr[inlen];
 	FILE *outf=stdout;
 	int ioff;
+	int *iptr;
 	struct sockaddr_un address;
 
 	lowfd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -86,31 +89,39 @@ void* run_low(void *arg){
 
 	if(ret==OK){
 		while((ilen=read(lowfd,inarr,sizeof(*inarr)*inlen))>0){
+			iptr=inarr;
 			ilen/=sizeof(*inarr);
-			switch(inarr[0]){
-				case -MTG_ACT_TAP:
-					fprintf(outf,"%d taps cards:\n",inarr[1]);
-					ioff=1;
-					break;
-				case -MTG_ACT_VIS:
-					fprintf(outf,"%d shows cards:\n",inarr[1]);
-					ioff=1;
-					break;
-				case -MTG_ACT_MOVE:
-					fprintf(outf,"%d moves (to [%c]) cards :\n",inarr[1],zone_letter[inarr[2]]);
-					ioff=2;
-					break;
-				case -MTG_ACT_TRANS:
-					fprintf(outf,"%d gives control (to [%d]) cards :\n",inarr[1],inarr[2]);
-					ioff=2;
-					break;
-				case -MTG_ACT_DRAW:
-					fprintf(outf,"%d draws %d cards\n",inarr[1],inarr[2]);
-					ioff=2;
-					break;
-			}
-			if(ilen-ioff>0){
-				print_cards(outf,inarr+ioff,ilen-ioff);
+			while(ilen>0){
+				switch(iptr[1]){
+					case -MTG_ACT_TAP:
+						fprintf(outf,"%d taps cards:\n",iptr[2]);
+						ioff=3;
+						break;
+					case -MTG_ACT_VIS:
+						fprintf(outf,"%d shows cards:\n",iptr[2]);
+						ioff=3;
+						break;
+					case -MTG_ACT_MOVE:
+						fprintf(outf,"%d moves (to [%c]) cards :\n",iptr[2],zone_letter[iptr[3]]);
+						ioff=4;
+						break;
+					case -MTG_ACT_TRANS:
+						fprintf(outf,"%d gives control (to [%d]) cards :\n",iptr[2],iptr[3]);
+						ioff=4;
+						break;
+					case -MTG_ACT_DRAW:
+						fprintf(outf,"%d draws %d cards\n",iptr[2],iptr[3]);
+						ioff=4;
+						break;
+					default:
+						ioff=2;
+						break;
+				}
+				if(iptr[0]-ioff>0){
+					print_cards(outf,iptr+ioff,iptr[0]-ioff);
+				}
+				ilen-=iptr[0];
+				iptr+=iptr[0];
 			}
 		}
 	}
@@ -224,6 +235,7 @@ int main(int argc, char **argv){
 		while((len=read(0,line,LINE_LEN))>0 && strncmp("exit\n",line,len)!=0){
 			if(line[0]=='?'){
 				print_help(line+1);
+				continue;
 			}
 			switch(line[0]){
 				case '0':
@@ -264,6 +276,10 @@ int main(int argc, char **argv){
 					outarr[0]=-MTG_ACT_TRANS;
 					outarr[1]=strtol(line+1,&lp,10);
 					outarr[2]=strtol(lp+1,NULL,10);
+					break;
+				default:
+					olen=1;
+					outarr[0]=0;
 					break;
 
 			}

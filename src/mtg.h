@@ -74,6 +74,7 @@ typedef struct PlayerList{
 
 typedef struct MtgGame{
 	int state;
+	PlayerList_t *lastact;
 	PlayerList_t *priority;
 	PlayerList_t *players;
 	int index;

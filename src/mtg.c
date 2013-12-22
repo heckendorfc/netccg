@@ -29,13 +29,13 @@ const char *turn_names[]={
 void msg_broad(PlayerList_t *player, int *arr, int len){
 	PlayerList_t *ptr=player;
 	do{
-		write(ptr->replyfd,arr,len*sizeof*(arr));
+		write(ptr->replyfd,arr,len*sizeof(*arr));
 		ptr=ptr->next;
 	}while(ptr!=player);
 }
 
 void msg_direct(PlayerList_t *player, int *arr, int len){
-	write(player->replyfd,arr,len*sizeof*(arr));
+	write(player->replyfd,arr,len*sizeof(*arr));
 }
 
 void mtg_init(MtgGame_t *game){
@@ -48,7 +48,7 @@ void mtg_init(MtgGame_t *game){
 	if(sqlite3_open_v2(query,&game->conn,SQLITE_OPEN_CREATE|SQLITE_OPEN_READWRITE,NULL)!=SQLITE_OK)
 		exit(1);
 
-	sprintf(query,"CREATE TEMP TABLE Cards(ID integer primary key, Zone integer, CardID integer, Player integer, Vis integer, Rot integer)");
+	sprintf(query,"CREATE TEMP TABLE Card(ID integer primary key, Zone integer, CardID integer, Player integer, Vis integer, Rot integer)");
 	sqlite3_exec(game->conn,query,NULL,NULL,NULL);
 }
 
@@ -90,10 +90,11 @@ void init_deck(MtgGame_t *game, int index, const int *arr, const int len){
 	PlayerList_t *ptr;
 
 	for(i=0;i<len;i++){
-		sprintf(query,"INSERT INTO Cards(Zone,CardID,Player,Vis,Rot) VALUES (%d,%d,%d,%d,%d)",MTG_ZONE_DECK,arr[i],index,MTG_VIS_HIDDEN,MTG_ROT_UNTAPPED);
+		sprintf(query,"INSERT INTO Card(Zone,CardID,Player,Vis,Rot) VALUES (%d,%d,%d,%d,%d)",MTG_ZONE_DECK,arr[i],index,MTG_VIS_HIDDEN,MTG_ROT_UNTAPPED);
 		sqlite3_exec(game->conn,query,NULL,NULL,NULL);
 	}
 
+	/*
 	ptr=game->players;
 	while(ptr){
 		if(ptr->index==index){
@@ -106,6 +107,7 @@ void init_deck(MtgGame_t *game, int index, const int *arr, const int len){
 		}
 		ptr=ptr->next;
 	}
+	*/
 }
 
 int get_next_game_state(int state){
@@ -121,16 +123,15 @@ int get_next_game_state(int state){
 void next_pregame_loop(MtgGame_t *game){
 	PlayerList_t *ptr=game->players;
 
-	ptr->ready=get_next_game_state(ptr->ready);
+	//ptr->ready=get_next_game_state(ptr->ready);
 	if(ptr->next->ready!=ptr->ready){
-		game->state=ptr->ready;
-		game->priority=game->players=game->players->next;
+		game->lastact=game->priority=game->players=game->players->next;
 		return;
 	}
 
 	// Everyone had a turn, next state!
 	game->state=ptr->ready;
-	game->priority=game->players=game->players->next;
+	game->lastact=game->priority=game->players=game->players->next;
 }
 
 void set_next_game_state(MtgGame_t *game){
@@ -145,7 +146,7 @@ void set_next_game_state(MtgGame_t *game){
 
 	if(game->state==MTG_TURN_UNTAP)
 		game->players=game->players->next;
-	game->priority=game->players;
+	game->lastact=game->priority=game->players;
 }
 
 void set_next_priority(MtgGame_t *game){
@@ -175,13 +176,25 @@ void set_player_state(MtgGame_t *game, int index, int state){
 	}
 }
 
+void set_player_states(MtgGame_t *game, int state){
+	PlayerList_t *ptr=game->players;
+
+	do{
+		ptr->ready=state;
+		ptr=ptr->next;
+	}while(ptr!=game->players);
+}
+
 void set_player_pass(MtgGame_t *game, int index){
 	int nextstate=get_next_game_state(game->state);
 	set_player_state(game,index,nextstate);
+	set_next_priority(game);
 }
 
 void set_player_done(MtgGame_t *game, int index){
-	set_player_state(game,index,game->state);
+	//set_player_state(game,index,game->state);
+	//set_player_states(game,game->state);
+	set_player_state(game,index,get_next_game_state(game->state));
 	set_next_priority(game);
 }
 
@@ -195,8 +208,10 @@ char* build_int_string(const int *arr, int len){
 	ptr=ret;
 	for(i=0;i<len;i++){
 		sprintf(ptr,"%d,",arr[i]);
-		while(ptr)ptr++;
+		while(*ptr)ptr++;
 	}
+	ptr--;
+	*ptr=0;
 
 	return ret;
 }
@@ -204,8 +219,8 @@ char* build_int_string(const int *arr, int len){
 int int_list_cb(void *arg, int col_n, char **row, char **title){
 	struct int_list *dst=(struct int_list*)arg;
 
-	dst->arr[dst->size*2]=strtol(row[0],NULL,10);
-	dst->arr[dst->size*2+1]=strtol(row[1],NULL,10);
+	dst->arr[dst->size]=strtol(row[0],NULL,10);
+	dst->arr[dst->size+1]=strtol(row[1],NULL,10);
 	dst->size+=2;
 
 	return SQLITE_OK;
@@ -225,7 +240,7 @@ int* get_id_pairs(sqlite3 *conn, char *args, int off, int len, int *size){
 	sprintf(query,"SELECT CardID,ID FROM Card WHERE ID IN (%s)",args);
 	sqlite3_exec(conn,query,int_list_cb,&dst,NULL);
 
-	*size=dst.size;
+	*size=dst.size+off;
 
 	return twoarr;
 }
@@ -244,7 +259,7 @@ int* get_id_pairs_hand(sqlite3 *conn, int off, int player, int len, int *size){
 	sprintf(query,"SELECT CardID,ID FROM Card WHERE Zone=%d AND Player=%d",MTG_ZONE_HAND,player);
 	sqlite3_exec(conn,query,int_list_cb,&dst,NULL);
 
-	*size=dst.size;
+	*size=dst.size+off;
 
 	return twoarr;
 }
@@ -263,9 +278,10 @@ void tap_card(MtgGame_t *game, const int *arr, int len){
 	sprintf(query,"UPDATE Card SET Rot=Rot+1 WHERE ID IN (%s)",args);
 	sqlite3_exec(game->conn,query,NULL,NULL,NULL);
 
-	twoarr=get_id_pairs(game->conn,args,2,len,&newlen);
-	twoarr[0]=-MTG_ACT_TAP;
-	twoarr[1]=game->priority->index;
+	twoarr=get_id_pairs(game->conn,args,3,len,&newlen);
+	twoarr[0]=newlen;
+	twoarr[1]=-MTG_ACT_TAP;
+	twoarr[2]=game->priority->index;
 
 	free(args);
 
@@ -290,9 +306,10 @@ void vis_card(MtgGame_t *game, const int *arr, int len){
 	sprintf(query,"UPDATE Card SET Vis=Vis+1 WHERE ID IN(%s)",args);
 	sqlite3_exec(game->conn,query,NULL,NULL,NULL);
 
-	twoarr=get_id_pairs(game->conn,args,2,len,&newlen);
-	twoarr[0]=-MTG_ACT_VIS;
-	twoarr[1]=game->priority->index;
+	twoarr=get_id_pairs(game->conn,args,3,len,&newlen);
+	twoarr[0]=newlen;
+	twoarr[1]=-MTG_ACT_VIS;
+	twoarr[2]=game->priority->index;
 
 	free(args);
 
@@ -317,10 +334,11 @@ void move_card(MtgGame_t *game, const int *arr, int len){
 	sprintf(query,"UPDATE Card SET Zone=%d WHERE ID IN (%s)",arr[0],args);
 	sqlite3_exec(game->conn,query,NULL,NULL,NULL);
 
-	twoarr=get_id_pairs(game->conn,args,3,len,&newlen);
-	twoarr[0]=-MTG_ACT_MOVE;
-	twoarr[1]=game->priority->index;
-	twoarr[2]=arr[0];
+	twoarr=get_id_pairs(game->conn,args,4,len,&newlen);
+	twoarr[0]=newlen;
+	twoarr[1]=-MTG_ACT_MOVE;
+	twoarr[2]=game->priority->index;
+	twoarr[3]=arr[0];
 
 	free(args);
 
@@ -345,10 +363,11 @@ void trans_card(MtgGame_t *game, const int *arr, int len){
 	sprintf(query,"UPDATE Card SET Player=%d WHERE ID IN (%s)",arr[0],args);
 	sqlite3_exec(game->conn,query,NULL,NULL,NULL);
 
-	twoarr=get_id_pairs(game->conn,args,3,len,&newlen);
-	twoarr[0]=-MTG_ACT_TRANS;
-	twoarr[1]=game->priority->index;
-	twoarr[2]=arr[0];
+	twoarr=get_id_pairs(game->conn,args,4,len,&newlen);
+	twoarr[0]=newlen;
+	twoarr[1]=-MTG_ACT_TRANS;
+	twoarr[2]=game->priority->index;
+	twoarr[3]=arr[0];
 
 	free(args);
 
@@ -364,14 +383,19 @@ void draw_card(MtgGame_t *game,int num){
 	char query[500];
 	int *twoarr;
 	int newlen;
-	int broadarr[3]={-MTG_ACT_DRAW,game->priority->index,num};
+	int broadarr[4]={4,-MTG_ACT_DRAW,game->priority->index,num};
 
 	sprintf(query,"UPDATE Card SET Vis=%d, Zone=%d WHERE Player=%d AND Zone=%d ORDER BY random() LIMIT %d",MTG_VIS_PRIVATE,MTG_ZONE_HAND,game->priority->index,MTG_ZONE_DECK,num);
 	sqlite3_exec(game->conn,query,NULL,NULL,NULL);
 
-	twoarr=get_id_pairs_hand(game->conn,3,game->priority->index,60,&newlen);
+	twoarr=get_id_pairs_hand(game->conn,2,game->priority->index,60,&newlen);
+	twoarr[0]=newlen;
+	twoarr[1]=0;
+	//twoarr[0]=-MTG_ACT_DRAW;
+	//twoarr[1]=game->priority->index;
+	//twoarr[2]=num;
 
-	msg_broad(game->priority,broadarr,3);
+	msg_broad(game->priority,broadarr,4);
 	msg_direct(game->priority,twoarr,newlen);
 
 	free(twoarr);
@@ -383,6 +407,10 @@ char* mtg_process_input(const int *in, int len, void *arg, int index){
 	char *str;
 	int passloop=0;
 	int nextstate;
+
+	if(index!=game->priority->index){
+		goto msg;
+	}
 
 	switch(in[0]){
 		case -MTG_ACT_INIT_DECK:
@@ -415,20 +443,24 @@ char* mtg_process_input(const int *in, int len, void *arg, int index){
 	if(passloop){
 		nextstate=get_next_game_state(game->state);
 
-		ptr=game->players;
+		ptr=game->lastact->next;
 		do{
 			if(ptr->ready!=nextstate){
 				passloop=0;
 				break;
 			}
 			ptr=ptr->next;
-		}while(ptr!=game->players);
+		}while(ptr!=game->lastact);
 
 		if(passloop){
 			set_next_game_state(game);
 		}
 	}
+	else{
+		game->lastact=game->priority;
+	}
 
+msg:
 	INIT_MEM(str,200);
 	sprintf(str,"%s(%d)'s %s> Priority: %s(%d)\n",game->players->name,game->players->index,turn_names[game->state],game->priority->name,game->players->index);
 
