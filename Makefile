@@ -43,8 +43,8 @@ all: $(ALL_PROGRAMS)
 $(PROGRAM1): $(PROGRAM1_OBS)
 	$(CC) $(LDFLAGS) $@ $^ $(LIBS) -lexpat
 
-$(PROGRAM3): $(PROGRAM3_OBS)
-	$(CC) $(LDFLAGS) $@ $^ $(LIBS)
+#$(PROGRAM3): $(PROGRAM3_OBS)
+	#$(CC) $(LDFLAGS) $@ $^ $(LIBS)
 
 $(PROGRAM2): $(PROGRAM2_OBS)
 	$(CC) $(LDFLAGS) $@ $^ $(LIBS)

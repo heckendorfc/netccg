@@ -1,6 +1,8 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/un.h>
@@ -672,8 +674,8 @@ int main(int argc, char **argv){
 	int num_topics=argc-1;
 	int server_sockfd;
 	int client_sockfd;
-	struct sockaddr_un server_address;
-	struct sockaddr_un client_address;
+	struct sockaddr_in server_address;
+	struct sockaddr_in client_address;
 	unsigned int server_len, client_len;
 	int type;
 	pid_t pid;
@@ -706,14 +708,16 @@ int main(int argc, char **argv){
 		spawn_topic(topics+i,argv[i+1],i);
 	}
 
-	unlink(SERVER_SOCKET_NAME);
-	server_sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+	//unlink(SERVER_SOCKET_NAME);
+	server_sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if(server_sockfd<0){
 		fprintf(stderr,"Socket failed\n");
 		return 1;
 	}
-	server_address.sun_family = AF_UNIX;
-	strcpy(server_address.sun_path, SERVER_SOCKET_NAME);
+	server_address.sin_family = AF_INET;
+	//strcpy(server_address.sun_path, SERVER_SOCKET_NAME);
+	server_address.sin_addr.s_addr = htonl(INADDR_ANY);
+	server_address.sin_port = htons(SERVER_PORT);
 	server_len = sizeof(server_address);
 
 	if(bind(server_sockfd, (struct sockaddr *)&server_address, server_len)<0){

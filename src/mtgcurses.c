@@ -1,6 +1,8 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/un.h>
@@ -189,15 +191,17 @@ void* run_listen(void *arg){
 	char **argv=(char**)arg;
 	int sockfd;
 	int len;
-	struct sockaddr_un address;
+	struct sockaddr_in address;
 	int ret;
 	const int LINE_LEN=512;
 	char line[LINE_LEN];
 
-	sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+	sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
-	address.sun_family = AF_UNIX;
-	strcpy(address.sun_path, SERVER_SOCKET_NAME);
+	address.sin_family = AF_INET;
+	address.sin_addr.s_addr = inet_addr(argv[1]);
+	address.sin_port = htons(SERVER_PORT);
+	//strcpy(address.sun_path, SERVER_SOCKET_NAME);
 	len = sizeof(address);
 
 	ret = connect(sockfd, (struct sockaddr *)&address, len);
@@ -208,7 +212,7 @@ void* run_listen(void *arg){
 		exit(1);
 	}
 
-	sprintf(line,"L%s",argv[1]);
+	sprintf(line,"L%s",argv[2]);
 
 	write(sockfd, line, strlen(line));
 	read(sockfd, &ret, sizeof(ret));
@@ -270,7 +274,7 @@ void* run_low(void *arg){
 	FILE *outf;
 	int ioff;
 	int *iptr;
-	struct sockaddr_un address;
+	struct sockaddr_in address;
 	char query[200];
 	int ind;
 
@@ -279,10 +283,12 @@ void* run_low(void *arg){
 
 	outf=fopen(query,"w");
 
-	lowfd = socket(AF_UNIX, SOCK_STREAM, 0);
+	lowfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
-	address.sun_family = AF_UNIX;
-	strcpy(address.sun_path, SERVER_SOCKET_NAME);
+	address.sin_family = AF_INET;
+	//strcpy(address.sun_path, SERVER_SOCKET_NAME);
+	address.sin_addr.s_addr = inet_addr(argv[1]);
+	address.sin_port = htons(SERVER_PORT);
 	ilen = sizeof(address);
 
 	ret = connect(lowfd, (struct sockaddr *)&address, ilen);
@@ -295,7 +301,7 @@ void* run_low(void *arg){
 	sprintf(query,"CREATE TEMP TABLE GameCard(ID integer primary key, Zone integer, CardID integer, Player integer, Vis integer, Rot integer)");
 	sqlite3_exec(cdb,query,NULL,NULL,NULL);
 
-	sprintf(line,"t%s\n%s",argv[1],argv[2]);
+	sprintf(line,"t%s\n%s",argv[2],argv[3]);
 	write(lowfd, line, strlen(line));
 	read(lowfd, &ret, sizeof(ret));
 	//printf("result from server = %d\n", ret);
@@ -450,7 +456,7 @@ int main(int argc, char *argv[])
 	int drawnum=7;
 	int sockfd;
 	int len;
-	struct sockaddr_un address;
+	struct sockaddr_in address;
 	int ret;
 	const int LINE_LEN=512;
 	char line[LINE_LEN];
@@ -460,12 +466,14 @@ int main(int argc, char *argv[])
 	int outarr[outlen];
 	char *lp;
 
-	if(argc<4)return EXIT_FAILURE;
+	if(argc<5)return EXIT_FAILURE;
 
-	sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+	sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
-	address.sun_family = AF_UNIX;
-	strcpy(address.sun_path, SERVER_SOCKET_NAME);
+	address.sin_family = AF_INET;
+	//strcpy(address.sun_path, SERVER_SOCKET_NAME);
+	address.sin_addr.s_addr = inet_addr(argv[1]);
+	address.sin_port = htons(SERVER_PORT);
 	len = sizeof(address);
 
 	ret = connect(sockfd, (struct sockaddr *)&address, len);
@@ -475,12 +483,12 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	if(sqlite3_open_v2(argv[3],&cdb,SQLITE_OPEN_READWRITE,NULL)!=SQLITE_OK){
+	if(sqlite3_open_v2(argv[4],&cdb,SQLITE_OPEN_READWRITE,NULL)!=SQLITE_OK){
 		perror("Unable to open database");
 		return EXIT_FAILURE;
 	}
 
-	sprintf(line,"T%s\n%s",argv[1],argv[2]);
+	sprintf(line,"T%s\n%s",argv[2],argv[3]);
 	write(sockfd, line, strlen(line));
 	read(sockfd, &ret, sizeof(ret));
 	//printf("result from server = %d\n", ret);
@@ -573,7 +581,7 @@ int main(int argc, char *argv[])
 				local=1;
 				break;
 			case '=':
-				olen=1+get_deck_array(outarr+1,strtol(argv[4],NULL,10));
+				olen=1+get_deck_array(outarr+1,strtol(argv[5],NULL,10));
 				outarr[0]=-MTG_ACT_INIT_DECK;
 				break;
 			case 'p':

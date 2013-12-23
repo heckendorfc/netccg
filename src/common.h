@@ -1,7 +1,8 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#define SERVER_SOCKET_NAME "/tmp/server_socket_mtg"
+//#define SERVER_SOCKET_NAME "/tmp/server_socket_mtg"
+#define SERVER_PORT 2220
 
 enum client_connect_return{
 	SRV_OK,
