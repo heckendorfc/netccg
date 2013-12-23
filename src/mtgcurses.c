@@ -133,7 +133,7 @@ void update_zone_view(){
 
 	for(i=0;i<CARD_ROW;i++){
 		for(j=0;j<CARD_COL;j++){
-			cards[i][j].id=-1;
+			cards[i][j].id=0;
 			werase(cards[i][j].w);
 			wprintw(cards[i][j].w,"A");
 			wrefresh(cards[i][j].w);
@@ -336,6 +336,11 @@ void* run_low(void *arg){
 						fprintf(outf,"%d draws %d cards\n",iptr[2],iptr[3]);
 						ioff=4;
 						break;
+					case -MTG_ACT_SPAWN:
+						sprintf(query,"INSERT OR IGNORE INTO GameCard (CardID,ID,Zone,Rot,Player,Vis) VALUES(%%d,%%d,%d,%d,%d,%d)",MTG_ZONE_PLAY,MTG_ROT_UNTAPPED,iptr[2],MTG_VIS_PUBLIC);
+						fprintf(outf,"%d puts a token into play:\n",iptr[2]);
+						ioff=3;
+						break;
 					default:
 						sprintf(query,"INSERT OR IGNORE INTO GameCard (CardID,ID,Zone,Rot,Player,Vis) VALUES(%%d,%%d,%d,%d,%d,%d)",MTG_ZONE_HAND,MTG_ROT_UNTAPPED,ind,MTG_VIS_PUBLIC);
 						ioff=2;
@@ -401,6 +406,26 @@ void add_line(WINDOW *win, const char *line, int *i){
 	(*i)++;
 }
 
+int get_token_id(int p, int t){
+	char query[200];
+	struct int_list dst;
+	int id=0;
+
+	if(!(p>='0' && p<='9') || !(t>='0' && t<='9'))
+		return 0;
+
+	p-='0';
+	t-='0';
+
+	dst.arr=&id;
+	dst.size=0;
+
+	sprintf(query,"SELECT ID FROM BasicCard WHERE ID<0 AND Pwr=%d AND Tgh=%d LIMIT 1",p,t);
+	sqlite3_exec(cdb,query,int_list_cb,&dst,NULL);
+
+	return id;
+}
+
 void init_help(){
 	int i=1;
 	add_line(help_w,"[0-9] : Switch player view",&i);
@@ -416,6 +441,7 @@ void init_help(){
 	add_line(help_w,"M[GDHP] : Move card to zone",&i);
 	add_line(help_w,"T : Tap selected card",&i);
 	add_line(help_w,"c[0-9] : Transfer card control to player",&i);
+	add_line(help_w,"S[0-9][0-9] : Put into play an x/x token",&i);
 }
 
 int main(int argc, char *argv[])
@@ -588,12 +614,19 @@ int main(int argc, char *argv[])
 				outarr[1]=getch();
 				outarr[2]=cards[cury][curx].gameid;
 				break;
+			case 'S':
+				olen=2;
+				outarr[0]=-MTG_ACT_SPAWN;
+				outarr[1]=get_token_id(getch(),getch());
+				if(outarr[1]>=0)
+					olen=0;
+				break;
 			default:
 				olen=1;
 				outarr[0]=0;
 				break;
 		}
-		if(!local && write(sockfd,outarr,sizeof(*outarr)*olen)<0)
+		if(!local && olen && write(sockfd,outarr,sizeof(*outarr)*olen)<0)
 			break;
 		update_zone_view();
 	}

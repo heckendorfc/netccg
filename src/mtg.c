@@ -231,7 +231,7 @@ int* get_id_pairs(sqlite3 *conn, char *args, int off, int len, int *size){
 	int *twoarr;
 	struct int_list dst;
 
-	INIT_MEM(twoarr,len*2+1);
+	INIT_MEM(twoarr,(len*2+1+off));
 	INIT_MEM(query,(50+len*11));
 
 	dst.arr=twoarr+off;
@@ -250,7 +250,7 @@ int* get_id_pairs_hand(sqlite3 *conn, int off, int player, int len, int *size){
 	int *twoarr;
 	struct int_list dst;
 
-	INIT_MEM(twoarr,len*2+1);
+	INIT_MEM(twoarr,(len*2+1+off));
 	INIT_MEM(query,(50+len*11));
 
 	dst.arr=twoarr+off;
@@ -401,6 +401,26 @@ void draw_card(MtgGame_t *game,int num){
 	free(twoarr);
 }
 
+void spawn_card(MtgGame_t *game, int id){
+	char query[500];
+	int *twoarr;
+	int newlen;
+
+	sprintf(query,"INSERT INTO Card(Zone,CardID,Player,Vis,Rot) VALUES (%d,%d,%d,%d,%d)",MTG_ZONE_PLAY,id,game->priority->index,MTG_VIS_PUBLIC,MTG_ROT_UNTAPPED);
+	sqlite3_exec(game->conn,query,NULL,NULL,NULL);
+
+	sprintf(query,"%ld",sqlite3_last_insert_rowid(game->conn));
+
+	twoarr=get_id_pairs(game->conn,query,3,10,&newlen);
+	twoarr[0]=newlen;
+	twoarr[1]=-MTG_ACT_SPAWN;
+	twoarr[2]=game->priority->index;
+
+	msg_broad(game->priority,twoarr,newlen);
+
+	free(twoarr);
+}
+
 char* mtg_process_input(const int *in, int len, void *arg, int index){
 	MtgGame_t *game=(MtgGame_t*)arg;
 	PlayerList_t *ptr;
@@ -437,6 +457,9 @@ char* mtg_process_input(const int *in, int len, void *arg, int index){
 			break;
 		case -MTG_ACT_DRAW:
 			draw_card(game,in[1]);
+			break;
+		case -MTG_ACT_SPAWN:
+			spawn_card(game,in[1]);
 			break;
 	}
 
