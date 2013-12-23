@@ -237,7 +237,12 @@ void process_talker(talker_thread_t *talker){
 				break;
 			}
 
-			notify=talker->topic->process(line,numread/sizeof(*line),talker->topic->parg,talker->talk_index);
+			if(talker->topic->parg!=NULL)
+				notify=talker->topic->process(line,numread/sizeof(*line),talker->topic->parg,talker->talk_index);
+			else{
+				INIT_MEM(notify,25);
+				strcpy(notify,"Game not yet started.");
+			}
 
 			pthread_mutex_lock(&talker->topic->listen_mutex);
 				ptr=talker->topic->listener;
@@ -347,6 +352,7 @@ void spawn_topic(topic_t **topic, char *name, int index){
 		return;
 	}
 
+	(*topic)->parg=NULL;
 	(*topic)->process=mtg_process_input;
 	(*topic)->run_topic=1;
 	(*topic)->listener=NULL;
