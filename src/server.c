@@ -181,7 +181,7 @@ int add_client(topic_t *topic, int type, char *username, int fd){
 		pthread_mutex_unlock(&topic->listen_mutex);
 	}
 
-	return OK;
+	return SRV_OK;
 }
 
 /*
@@ -220,6 +220,9 @@ void process_talker(talker_thread_t *talker){
 	int offset;
 	int style;
 	char *notify;
+
+	if(write(talker->topic->talker[talker->talk_index].replyfd,&talker->talk_index,sizeof(talker->talk_index))<0)
+		return;
 
 	while(talker->topic->run_topic){
 		FD_ZERO(&read_set);
@@ -398,7 +401,7 @@ int parse_accept_line(char *line, int *type, char **t, char **u){
 	**u=0;
 	(*u)++;
 
-	return OK;
+	return SRV_OK;
 }
 
 /*
@@ -525,11 +528,11 @@ Description: Checks the query sent by the client for errors.
 int validate_listen_query(topic_t **topics, int num_topics, char *a, char *b){
 	switch(*b){
 		case 'l':
-			return OK;
+			return SRV_OK;
 		case 'n':
 			if(get_topic(a,topics,num_topics)<0)
 				return INVALID_TOPIC;
-			return OK;
+			return SRV_OK;
 		default:
 			return INVALID_OPTION;
 	}
@@ -562,7 +565,7 @@ int validate_admin_query(topic_t **topics, int num_topics, char *a, char *b){
 			return INVALID_OPTION;
 	}
 
-	return OK;
+	return SRV_OK;
 }
 
 /*
@@ -731,7 +734,7 @@ int main(int argc, char **argv){
 		}
 		line[ret]=0;
 		ret=parse_accept_line(line,&type,&tname,&uname);
-		if(type==TYPE_TALK && ret!=OK){
+		if(type==TYPE_TALK && ret!=SRV_OK){
 			// Just write out the error
 		}
 		else if(type==TYPE_LISTEN_QUERY){
@@ -747,7 +750,7 @@ int main(int argc, char **argv){
 			ret=add_client(topics[i],type,uname,client_sockfd);
 		}
 		if(write(client_sockfd,&ret,sizeof(ret))<0 ||
-		   ret!=OK)
+		   ret!=SRV_OK)
 			close(client_sockfd);
 		else{
 			if(type==TYPE_LISTEN)

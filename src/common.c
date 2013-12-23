@@ -10,7 +10,7 @@ Description: Prints the error message associated with a server return value
 */
 void print_server_error(int ret){
 	char *str;
-	if(ret!=OK){
+	if(ret!=SRV_OK){
 		switch(ret){
 			case TOPIC_FULL:
 				str="This topic already has the maximum talkers.";

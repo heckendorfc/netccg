@@ -66,6 +66,7 @@ void* run_low(void *arg){
 	FILE *outf=stdout;
 	int ioff;
 	int *iptr;
+	int ind;
 	struct sockaddr_un address;
 
 	lowfd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -86,8 +87,10 @@ void* run_low(void *arg){
 	read(lowfd, &ret, sizeof(ret));
 	printf("result from server = %d\n", ret);
 	print_server_error(ret);
+	read(lowfd, &ind, sizeof(ind));
+	printf("my index = %d\n", ind);
 
-	if(ret==OK){
+	if(ret==SRV_OK){
 		while((ilen=read(lowfd,inarr,sizeof(*inarr)*inlen))>0){
 			iptr=inarr;
 			ilen/=sizeof(*inarr);
@@ -230,7 +233,7 @@ int main(int argc, char **argv){
 	printf("result from server = %d\n", ret);
 	print_server_error(ret);
 
-	if(ret==OK){
+	if(ret==SRV_OK){
 		pthread_create(&lowthread,NULL,run_low,argv);
 		while((len=read(0,line,LINE_LEN))>0 && strncmp("exit\n",line,len)!=0){
 			if(line[0]=='?'){

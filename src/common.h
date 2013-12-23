@@ -4,7 +4,7 @@
 #define SERVER_SOCKET_NAME "/tmp/server_socket_mtg"
 
 enum client_connect_return{
-	OK,
+	SRV_OK,
 	TOPIC_FULL, // No more room for talkers
 	SERVER_FULL, // No more room for topics
 	INVALID_USERNAME,
