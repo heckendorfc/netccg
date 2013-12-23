@@ -27,9 +27,9 @@ Name text,
 Cost text,
 Pwr integer,
 Tgh integer,
-TypeSuper integer,
-TypeCard integer,
-TypeSub integer
+TypeSuper text,
+TypeCard text,
+TypeSub text
 );
 
 CREATE TABLE Library(

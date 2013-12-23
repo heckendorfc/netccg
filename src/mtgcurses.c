@@ -68,7 +68,7 @@ int set_short_card_cb(void *arg, int col_n, char **row, char **titles){
 		wattron(cards[i][j].w,A_UNDERLINE);
 
 	wmove(cards[i][j].w,0,0);
-	wprintw(cards[i][j].w,cards[i][j].name);
+	wprintw(cards[i][j].w,"%s",cards[i][j].name);
 	wrefresh(cards[i][j].w);
 
 	if(*count==CARD_COL*cury+curx)
@@ -81,10 +81,50 @@ int set_short_card_cb(void *arg, int col_n, char **row, char **titles){
 	return SQLITE_OK;
 }
 
+int card_info_cb(void *arg, int col_n, char **row, char **titles){
+	wmove(info_w,2,2);
+	wprintw(info_w,"%s %s %s/%s",row[0],row[1],row[2],row[3]);
+	wmove(info_w,3,2);
+	wprintw(info_w,"%s %s - %s",row[4],row[5],row[6]);
+	return SQLITE_OK;
+}
+
+void set_info(int *i, int len, int max, char *q, char *ptr){
+	if(len==0)
+		return;
+	do{
+		wmove(info_w,*i,2);
+		snprintf(q,max,"%s",ptr);
+		wprintw(info_w,"%s",q);
+		ptr+=max-1;
+		len-=max-1;
+		(*i)++;
+	}while(len>0);
+}
+
+int card_rule_cb(void *arg, int col_n, char **row, char **titles){
+	int *i=(int*)arg;
+	char *ptr,q[100];
+	int len;
+
+	len=strlen(row[0]);
+	ptr=row[0];
+	set_info(i,len,75,q,ptr);
+
+	len=strlen(row[1]);
+	ptr=row[1];
+	set_info(i,len,75,q,ptr);
+
+	(*i)++;
+
+	return SQLITE_OK;
+}
+
 void update_zone_view(){
 	char query[200];
 	int count=0;
 	int i,j;
+	int n;
 
 	move(4,0);
 	printw("View: %d%c",playerview,zone_letter[zoneview]);
@@ -100,6 +140,18 @@ void update_zone_view(){
 
 	sprintf(query,"SELECT Name,Cost,Pwr,Tgh,BasicCard.ID,GameCard.ID,Rot FROM BasicCard, GameCard WHERE BasicCard.ID=GameCard.CardID AND Player=%d AND Zone=%d",playerview,zoneview);
 	sqlite3_exec(cdb,query,set_short_card_cb,&count,NULL);
+
+	werase(info_w);
+	box(info_w,0,0);
+
+	sprintf(query,"SELECT Name,Cost,Pwr,Tgh,TypeSuper,TypeCard,TypeSub FROM BasicCard WHERE ID=%d",cards[cury][curx].id);
+	sqlite3_exec(cdb,query,card_info_cb,NULL,NULL);
+
+	n=5;
+	sprintf(query,"SELECT Data,Hint FROM CardRule WHERE CardID=%d",cards[cury][curx].id);
+	sqlite3_exec(cdb,query,card_rule_cb,&n,NULL);
+
+	wrefresh(info_w);
 }
 
 void init_card_w(){
