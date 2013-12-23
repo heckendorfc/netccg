@@ -385,7 +385,7 @@ void draw_card(MtgGame_t *game,int num){
 	int newlen;
 	int broadarr[4]={4,-MTG_ACT_DRAW,game->priority->index,num};
 
-	sprintf(query,"UPDATE Card SET Vis=%d, Zone=%d WHERE Player=%d AND Zone=%d ORDER BY random() LIMIT %d",MTG_VIS_PRIVATE,MTG_ZONE_HAND,game->priority->index,MTG_ZONE_DECK,num);
+	sprintf(query,"UPDATE Card SET Vis=%d, Zone=%d WHERE ID IN (SELECT ID FROM Card WHERE Player=%d AND Zone=%d ORDER BY random() LIMIT %d)",MTG_VIS_PRIVATE,MTG_ZONE_HAND,game->priority->index,MTG_ZONE_DECK,num);
 	sqlite3_exec(game->conn,query,NULL,NULL,NULL);
 
 	twoarr=get_id_pairs_hand(game->conn,2,game->priority->index,60,&newlen);
