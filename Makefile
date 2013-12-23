@@ -1,7 +1,7 @@
 CC=gcc
 CFLAGS=-g -O0 -Wall -I/usr/local/include
 LDFLAGS=-L/usr/local/lib -o
-LIBS=-lm -lsqlite3
+LIBS=-lm -lsqlite3 -pthread
 
 ## Output programs
 PROGRAM1=xml2sql
