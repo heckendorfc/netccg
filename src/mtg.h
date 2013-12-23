@@ -18,7 +18,7 @@ enum mtg_vis{
 };
 
 enum mtg_rot{
-	MTG_ROT_UNTAPPED=1,
+	MTG_ROT_UNTAPPED=0,
 	MTG_ROT_TAPPED,
 };
 

@@ -15,6 +15,7 @@
 #define CARD_PER_LINE 3
 
 sqlite3 *cdb;
+pthread_mutex_t view_m;
 
 const char zone_letter[]={
 	'-', // blank
@@ -43,7 +44,7 @@ typedef struct card_t{
 #define CARD_ROW 10
 
 static card_t cards[CARD_ROW][CARD_COL];
-static WINDOW *turns_w,*info_w,*zone_w,*log_w;
+static WINDOW *turns_w,*info_w,*zone_w,*log_w,*help_w;
 static int curx=0,cury=0;
 static int playerview;
 static int zoneview=MTG_ZONE_HAND;
@@ -126,6 +127,7 @@ void update_zone_view(){
 	int i,j;
 	int n;
 
+	pthread_mutex_lock(&view_m);
 	move(4,0);
 	printw("View: %d%c",playerview,zone_letter[zoneview]);
 
@@ -152,6 +154,7 @@ void update_zone_view(){
 	sqlite3_exec(cdb,query,card_rule_cb,&n,NULL);
 
 	wrefresh(info_w);
+	pthread_mutex_unlock(&view_m);
 }
 
 void init_card_w(){
@@ -177,7 +180,8 @@ void update_cards(char *query, int *arr, int len){
 
 	for(i=0;i<len;i+=2){
 		sprintf(q,query,arr[i],arr[i+1]);
-		sqlite3_exec(cdb,q,NULL,NULL,NULL);
+		if(sqlite3_exec(cdb,q,NULL,NULL,NULL)!=SQLITE_OK)
+			fprintf(stderr,"SQL ERROR IN: %s\n",q);
 	}
 }
 
@@ -208,16 +212,20 @@ void* run_listen(void *arg){
 
 	write(sockfd, line, strlen(line));
 	read(sockfd, &ret, sizeof(ret));
+	pthread_mutex_lock(&view_m);
 	wmove(turns_w,1,1);
 	wprintw(turns_w,"result from server = %d", ret);
 	wrefresh(turns_w);
+	pthread_mutex_unlock(&view_m);
 	//print_server_error(ret);
 
 	while((len=read(sockfd, line, LINE_LEN))>0){
 		line[len-1]=0;
+		pthread_mutex_lock(&view_m);
 		wmove(turns_w,1,1);
 		wprintw(turns_w,"+%s+",line);
 		wrefresh(turns_w);
+		pthread_mutex_unlock(&view_m);
 	};
 
 	close(sockfd);
@@ -302,7 +310,7 @@ void* run_low(void *arg){
 			while(ilen>0){
 				switch(iptr[1]){
 					case -MTG_ACT_TAP:
-						sprintf(query,"UPDATE GameCard SET CardID=%%d, Rot=(!(Rot-1))+1 WHERE ID=%%d");
+						sprintf(query,"UPDATE GameCard SET CardID=%%d, Rot=NOT Rot WHERE ID=%%d");
 						fprintf(outf,"%d taps cards:\n",iptr[2]);
 						ioff=3;
 						break;
@@ -336,6 +344,7 @@ void* run_low(void *arg){
 				if(iptr[0]-ioff>0){
 					update_cards(query,iptr+ioff,iptr[0]-ioff);
 					print_cards(outf,iptr+ioff,iptr[0]-ioff);
+					update_zone_view();
 				}
 				ilen-=iptr[0];
 				iptr+=iptr[0];
@@ -384,6 +393,29 @@ int get_deck_array(int *arr,int id){
 	sqlite3_exec(cdb,query,int_list_cb,&dst,NULL);
 
 	return dst.size;
+}
+
+void add_line(WINDOW *win, const char *line, int *i){
+	wmove(win,*i,2);
+	wprintw(win,"%s",line);
+	(*i)++;
+}
+
+void init_help(){
+	int i=1;
+	add_line(help_w,"[0-9] : Switch player view",&i);
+	add_line(help_w,"Z[GHDP] : Switch zone view",&i);
+	i++;
+	add_line(help_w,"= : Load deck",&i);
+	i++;
+	add_line(help_w,"p : Pass",&i);
+	add_line(help_w,"d : Done",&i);
+	i++;
+	add_line(help_w,"D : Draw",&i);
+	add_line(help_w,"V : Show selected card",&i);
+	add_line(help_w,"M[GDHP] : Move card to zone",&i);
+	add_line(help_w,"T : Tap selected card",&i);
+	add_line(help_w,"c[0-9] : Transfer card control to player",&i);
 }
 
 int main(int argc, char *argv[])
@@ -456,6 +488,11 @@ int main(int argc, char *argv[])
 	box(log_w,0,0);
 	wrefresh(log_w);
 */
+	help_w=newwin(20,45,LINES-20-1,105);
+	box(help_w,0,0);
+	init_help();
+	wrefresh(help_w);
+
 	info_w=newwin(20,100,LINES-20-1,0);
 	box(info_w,0,0);
 	wrefresh(info_w);
@@ -467,6 +504,7 @@ int main(int argc, char *argv[])
 
 	move(LINES-1,0);
 
+	pthread_mutex_init(&view_m,NULL);
 	pthread_create(&lowthread,NULL,run_low,argv);
 	pthread_create(&listenthread,NULL,run_listen,argv);
 
@@ -478,6 +516,7 @@ int main(int argc, char *argv[])
 
 		if(c>='0' && c<='9'){
 			playerview=c-'0';
+			curx=cury=0;
 			update_zone_view();
 			continue;
 		}
@@ -485,6 +524,7 @@ int main(int argc, char *argv[])
 		if(c=='Z' || c=='z'){
 			int d=getch();
 			zoneview=get_zone(d);
+			curx=cury=0;
 			update_zone_view();
 			continue;
 		}
@@ -553,12 +593,12 @@ int main(int argc, char *argv[])
 				outarr[0]=0;
 				break;
 		}
-		if(local){
-			update_zone_view();
-		}
-		else if(write(sockfd,outarr,sizeof(*outarr)*olen)<0)
+		if(!local && write(sockfd,outarr,sizeof(*outarr)*olen)<0)
 			break;
+		update_zone_view();
 	}
+
+	pthread_mutex_destroy(&view_m);
 
 	finish(0);               /* we're done */
 

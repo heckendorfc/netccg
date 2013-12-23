@@ -275,7 +275,7 @@ void tap_card(MtgGame_t *game, const int *arr, int len){
 
 	args=build_int_string(arr,len);
 
-	sprintf(query,"UPDATE Card SET Rot=Rot+1 WHERE ID IN (%s)",args);
+	sprintf(query,"UPDATE Card SET Rot=NOT Rot WHERE ID IN (%s)",args);
 	sqlite3_exec(game->conn,query,NULL,NULL,NULL);
 
 	twoarr=get_id_pairs(game->conn,args,3,len,&newlen);
@@ -285,8 +285,8 @@ void tap_card(MtgGame_t *game, const int *arr, int len){
 
 	free(args);
 
-	sprintf(query,"UPDATE Card SET Rot=1 WHERE Rot>2");
-	sqlite3_exec(game->conn,query,NULL,NULL,NULL);
+	//sprintf(query,"UPDATE Card SET Rot=1 WHERE Rot>2");
+	//sqlite3_exec(game->conn,query,NULL,NULL,NULL);
 
 	msg_broad(game->priority,twoarr,newlen);
 
