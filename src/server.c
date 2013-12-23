@@ -686,14 +686,14 @@ int main(int argc, char **argv){
 	}
 
 	umask(0);
-	/*
+
 	if((pid=fork())<0){
 		fprintf(stderr,"Fork failed\n");
 		return 1;
 	}
 	else if(pid!=0)
 		return 0;
-	*/
+
 	setsid();
 
 	// Ignore broken pipes from when listeners quit. We will delete them as needed.
