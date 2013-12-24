@@ -16,6 +16,38 @@
 
 #define CARD_PER_LINE 3
 
+#define TURN_HEIGHT 3
+#define TURN_WIDTH 50
+#define TURN_TGAP 0
+#define TURN_LGAP 6
+
+#define CARD_HEIGHT 1
+#define CARD_WIDTH 40
+#define CARD_HSPACE 5
+#define CARD_VSPACE 1
+#define CARD_LGAP 5
+#define CARD_TGAP (TURN_HEIGHT+TURN_TGAP+4)
+
+#define INFO_WIDTH 100
+#define INFO_HEIGHT 20
+#define INFO_TGAP (LINES-INFO_HEIGHT-1)
+#define INFO_LGAP 0
+
+#define HELP_WIDTH 45
+#define HELP_HEIGHT 20
+#define HELP_LGAP (INFO_WIDTH+5)
+#define HELP_TGAP (LINES-HELP_HEIGHT-1)
+
+#define CARD_COL ((COLS-CARD_LGAP)/(CARD_WIDTH+CARD_HSPACE))
+#define CARD_ROW ((LINES-CARD_TGAP-INFO_HEIGHT-CARD_VSPACE)/(CARD_HEIGHT+CARD_VSPACE))
+#define MAX_CARD_COL 6
+#define MAX_CARD_ROW 50
+
+#define DIVW_HEIGHT 1
+#define DIVW_WIDTH (CARD_COL*(CARD_WIDTH+CARD_HSPACE))
+#define DIVW_LGAP 3
+
+
 sqlite3 *cdb;
 pthread_mutex_t view_m;
 
@@ -25,7 +57,18 @@ const char zone_letter[]={
 	'H',
 	'G',
 	'P',
-	'V'
+	'V',
+	'B'
+};
+
+const char *zname[]={
+	"",
+	"DRAW",
+	"HAND",
+	"GRVE",
+	"PLAY",
+	"VOID",
+	"BTLE",
 };
 
 struct printer_s{
@@ -42,14 +85,11 @@ typedef struct card_t{
 	int tap;
 }card_t;
 
-#define CARD_COL 4
-#define CARD_ROW 10
-
-static card_t cards[CARD_ROW][CARD_COL];
-static WINDOW *turns_w,*info_w,*zone_w,*log_w,*help_w;
+static card_t cards[MAX_CARD_ROW][MAX_CARD_COL];
+static WINDOW *div_w[MAX_CARD_ROW],*turns_w,*info_w,*zone_w,*log_w,*help_w;
 static int curx=0,cury=0;
 static int playerview;
-static int zoneview=MTG_ZONE_HAND;
+static int zoneview=MTG_ZONE_BATTLE;
 
 static void finish(int sig);
 
@@ -123,6 +163,36 @@ int card_rule_cb(void *arg, int col_n, char **row, char **titles){
 	return SQLITE_OK;
 }
 
+void draw_div(int index, int z, int count){
+	int i;
+	/*
+	for(i=0;i<count;i++){
+		wmove(div_w[i],0,DIVW_WIDTH/2-2);
+		wprintw(div_w[i],"%s",zname[z]);
+		wrefresh(div_w[i]);
+	}
+	*/
+
+	for(i=0;i<count;i++){
+		whline(div_w[index+i],'-',DIVW_WIDTH);
+		wmove(div_w[index+i],0,DIVW_WIDTH/2-2);
+		wprintw(div_w[index+i],"%s",zname[z]);
+		wrefresh(div_w[index+i]);
+	}
+}
+
+void add_zone_view(int *pos, int zone){
+	char query[200];
+	int start=*pos;
+
+	sprintf(query,"SELECT Name,Cost,Pwr,Tgh,BasicCard.ID,GameCard.ID,Rot FROM BasicCard, GameCard WHERE BasicCard.ID=GameCard.CardID AND Player=%d AND Zone=%d",playerview,zone);
+	sqlite3_exec(cdb,query,set_short_card_cb,pos,NULL);
+
+	start/=CARD_COL;
+	draw_div(start,zone,1);
+	*pos+=CARD_COL-((*pos)%CARD_COL);
+}
+
 void update_zone_view(){
 	char query[200];
 	int count=0;
@@ -137,14 +207,40 @@ void update_zone_view(){
 		for(j=0;j<CARD_COL;j++){
 			cards[i][j].id=0;
 			werase(cards[i][j].w);
-			wprintw(cards[i][j].w,"A");
+			//wprintw(cards[i][j].w,"A");
 			wrefresh(cards[i][j].w);
 		}
+		werase(div_w[i]);
+		wrefresh(div_w[i]);
 	}
 
+
+	if(zoneview!=MTG_ZONE_HAND)
+		add_zone_view(&count,zoneview);
+	if(zoneview==MTG_ZONE_BATTLE)
+		add_zone_view(&count,MTG_ZONE_PLAY);
+	add_zone_view(&count,MTG_ZONE_HAND);
+
+/*
 	sprintf(query,"SELECT Name,Cost,Pwr,Tgh,BasicCard.ID,GameCard.ID,Rot FROM BasicCard, GameCard WHERE BasicCard.ID=GameCard.CardID AND Player=%d AND Zone=%d",playerview,zoneview);
 	sqlite3_exec(cdb,query,set_short_card_cb,&count,NULL);
 
+	if(count){
+		count=count/CARD_COL+1;
+		draw_div(0,zoneview,1);
+		if(zoneview!=MTG_ZONE_HAND)
+			draw_div(count,MTG_ZONE_HAND,1);
+		count=count*CARD_COL;
+	}
+	else{
+		draw_div(0,MTG_ZONE_HAND,1);
+	}
+
+	if(zoneview!=MTG_ZONE_HAND){
+		sprintf(query,"SELECT Name,Cost,Pwr,Tgh,BasicCard.ID,GameCard.ID,Rot FROM BasicCard, GameCard WHERE BasicCard.ID=GameCard.CardID AND Player=%d AND Zone=%d",playerview,MTG_ZONE_HAND);
+		sqlite3_exec(cdb,query,set_short_card_cb,&count,NULL);
+	}
+*/
 	werase(info_w);
 	box(info_w,0,0);
 
@@ -164,7 +260,7 @@ void init_card_w(){
 
 	for(i=0;i<CARD_COL;i++){
 		for(j=0;j<CARD_ROW;j++){
-			cards[j][i].w=newwin(1,40,j*3+6,i*45+5);
+			cards[j][i].w=newwin(CARD_HEIGHT,CARD_WIDTH,j*(CARD_HEIGHT+CARD_VSPACE)+CARD_TGAP,i*(CARD_WIDTH+CARD_HSPACE)+CARD_LGAP);
 			//sprintf(cards[j][i].name,"wiogeh");
 			//wattron(cards[j][i].w,A_UNDERLINE);
 			//wattron(cards[j][i].w,A_BOLD);
@@ -378,6 +474,10 @@ int get_zone(const char z){
 		case 'p':
 		case 'P':
 			return MTG_ZONE_PLAY;
+		case 'b':
+		case 'B':
+			return MTG_ZONE_BATTLE;
+		case 'g':
 		case 'G':
 		default:
 			return MTG_ZONE_GRAVEYARD;
@@ -435,7 +535,7 @@ int get_token_id(int p, int t){
 void init_help(){
 	int i=1;
 	add_line(help_w,"[0-9] : Switch player view",&i);
-	add_line(help_w,"Z[GHDP] : Switch zone view",&i);
+	add_line(help_w,"Z[GHDPB] : Switch zone view",&i);
 	i++;
 	add_line(help_w,"= : Load deck",&i);
 	i++;
@@ -444,10 +544,48 @@ void init_help(){
 	i++;
 	add_line(help_w,"D : Draw",&i);
 	add_line(help_w,"V : Show selected card",&i);
-	add_line(help_w,"M[GDHP] : Move card to zone",&i);
+	add_line(help_w,"M[GDHPB] : Move card to zone",&i);
 	add_line(help_w,"T : Tap selected card",&i);
 	add_line(help_w,"c[0-9] : Transfer card control to player",&i);
 	add_line(help_w,"S[0-9][0-9] : Put into play an x/x token",&i);
+}
+
+void cursor_down(){
+	int x,y;
+
+	for(y=cury+1;y<CARD_ROW;y++){
+		for(x=curx;x>=0;x--){
+			if(cards[y][x].id){
+				curx=x;
+				cury=y;
+				return;
+			}
+		}
+	}
+}
+
+void cursor_up(){
+	int x,y;
+
+	for(y=cury-1;y>=0;y--){
+		for(x=curx;x>=0;x--){
+			if(cards[y][x].id){
+				curx=x;
+				cury=y;
+				return;
+			}
+		}
+	}
+}
+
+void cursor_left(){
+	if(curx>0)
+		curx--;
+}
+
+void cursor_right(){
+	if(cards[cury][curx+1].id)
+		curx++;
 }
 
 int main(int argc, char *argv[])
@@ -511,23 +649,31 @@ int main(int argc, char *argv[])
 	move(1,0);
 	printw("Turn:");
 	refresh();
-	turns_w=newwin(3,50,0,6);
+	turns_w=newwin(TURN_HEIGHT,TURN_WIDTH,TURN_TGAP,TURN_LGAP);
 	box(turns_w,0,0);
 	wmove(turns_w,1,1);
 	wprintw(turns_w,"zzz");
 	wrefresh(turns_w);
+
+	for(num=0;num<CARD_ROW;num++){
+		div_w[num]=newwin(DIVW_HEIGHT,DIVW_WIDTH,num*(CARD_HEIGHT+CARD_VSPACE)+CARD_TGAP-1,DIVW_LGAP);
+		//whline(div_w[num],'-',DIVW_WIDTH);
+		//wmove(div_w[num],0,DIVW_WIDTH/2-2);
+		//wprintw(div_w[num],"%s","HAND");
+		wrefresh(div_w[num]);
+	}
 
 /*
 	log_w=newwin(10,100,LINES-33-1,0);
 	box(log_w,0,0);
 	wrefresh(log_w);
 */
-	help_w=newwin(20,45,LINES-20-1,105);
+	help_w=newwin(HELP_HEIGHT,HELP_WIDTH,HELP_TGAP,HELP_LGAP);
 	box(help_w,0,0);
 	init_help();
 	wrefresh(help_w);
 
-	info_w=newwin(20,100,LINES-20-1,0);
+	info_w=newwin(INFO_HEIGHT,INFO_WIDTH,INFO_TGAP,INFO_LGAP);
 	box(info_w,0,0);
 	wrefresh(info_w);
 /*
@@ -565,19 +711,19 @@ int main(int argc, char *argv[])
 
 		switch(c){
 			case KEY_UP:
-				cury--;
+				cursor_up();
 				local=1;
 				break;
 			case KEY_DOWN:
-				cury++;
+				cursor_down();
 				local=1;
 				break;
 			case KEY_LEFT:
-				curx--;
+				cursor_left();
 				local=1;
 				break;
 			case KEY_RIGHT:
-				curx++;
+				cursor_right();
 				local=1;
 				break;
 			case '=':

@@ -62,7 +62,8 @@ enum mtg_zone{
 	MTG_ZONE_HAND,
 	MTG_ZONE_GRAVEYARD,
 	MTG_ZONE_PLAY,
-	MTG_ZONE_VOID
+	MTG_ZONE_VOID,
+	MTG_ZONE_BATTLE,
 };
 
 typedef struct PlayerList{
