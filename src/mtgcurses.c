@@ -100,7 +100,7 @@ int set_short_card_cb(void *arg, int col_n, char **row, char **titles){
 
 	i=(*count)/CARD_COL;
 	j=(*count)%CARD_COL;
-	sprintf(cards[i][j].name,"[%s %s %s/%s]",row[0],row[1],row[2],row[3]);
+	sprintf(cards[i][j].name,"[%s %s %s/%s (%s)]",row[0],row[1],row[2],row[3],row[7]);
 	cards[i][j].id=strtol(row[4],NULL,10);
 	cards[i][j].gameid=strtol(row[5],NULL,10);
 	tap=cards[i][j].tap=strtol(row[6],NULL,10);
@@ -185,7 +185,7 @@ void add_zone_view(int *pos, int zone){
 	char query[200];
 	int start=*pos;
 
-	sprintf(query,"SELECT Name,Cost,Pwr,Tgh,BasicCard.ID,GameCard.ID,Rot FROM BasicCard, GameCard WHERE BasicCard.ID=GameCard.CardID AND Player=%d AND Zone=%d",playerview,zone);
+	sprintf(query,"SELECT Name,Cost,Pwr,Tgh,BasicCard.ID,GameCard.ID,Rot,Ctr FROM BasicCard, GameCard WHERE BasicCard.ID=GameCard.CardID AND Player=%d AND Zone=%d",playerview,zone);
 	sqlite3_exec(cdb,query,set_short_card_cb,pos,NULL);
 
 	start/=CARD_COL;
@@ -394,7 +394,7 @@ void* run_low(void *arg){
 		exit(1);
 	}
 
-	sprintf(query,"CREATE TEMP TABLE GameCard(ID integer primary key, Zone integer, CardID integer, Player integer, Vis integer, Rot integer)");
+	sprintf(query,"CREATE TEMP TABLE GameCard(ID integer primary key, Zone integer, CardID integer, Player integer, Vis integer, Rot integer, Ctr integer default 0)");
 	sqlite3_exec(cdb,query,NULL,NULL,NULL);
 
 	sprintf(line,"t%s\n%s",argv[2],argv[3]);
@@ -442,6 +442,11 @@ void* run_low(void *arg){
 						sprintf(query,"INSERT OR IGNORE INTO GameCard (CardID,ID,Zone,Rot,Player,Vis) VALUES(%%d,%%d,%d,%d,%d,%d)",MTG_ZONE_PLAY,MTG_ROT_UNTAPPED,iptr[2],MTG_VIS_PUBLIC);
 						fprintf(outf,"%d puts a token into play:\n",iptr[2]);
 						ioff=3;
+						break;
+					case -MTG_ACT_CTR:
+						sprintf(query,"UPDATE GameCard SET CardID=%%d, Ctr=%d WHERE ID=%%d",iptr[3]);
+						fprintf(outf,"%d sets counter to %d on cards :\n",iptr[2],iptr[3]);
+						ioff=4;
 						break;
 					default:
 						sprintf(query,"INSERT OR IGNORE INTO GameCard (CardID,ID,Zone,Rot,Player,Vis) VALUES(%%d,%%d,%d,%d,%d,%d)",MTG_ZONE_HAND,MTG_ROT_UNTAPPED,ind,MTG_VIS_PUBLIC);
@@ -586,6 +591,20 @@ void cursor_left(){
 void cursor_right(){
 	if(cards[cury][curx+1].id)
 		curx++;
+}
+
+int get_counter(int id){
+	struct int_list dst;
+	char query[200];
+	int ret=0;
+
+	dst.arr=&ret;
+	dst.size=0;
+
+	sprintf(query,"SELECT Ctr FROM GameCard WHERE ID=%d LIMIT 1",id);
+	sqlite3_exec(cdb,query,int_list_cb,&dst,NULL);
+
+	return ret;
 }
 
 int main(int argc, char *argv[])
@@ -774,6 +793,18 @@ int main(int argc, char *argv[])
 				outarr[1]=get_token_id(getch(),getch());
 				if(outarr[1]>=0)
 					olen=0;
+				break;
+			case '+':
+				olen=3;
+				outarr[0]=-MTG_ACT_CTR;
+				outarr[1]=cards[cury][curx].gameid;
+				outarr[2]=get_counter(outarr[1])+1;
+				break;
+			case '-':
+				olen=3;
+				outarr[0]=-MTG_ACT_CTR;
+				outarr[1]=cards[cury][curx].gameid;
+				outarr[2]=get_counter(outarr[1])-1;
 				break;
 			default:
 				olen=1;

@@ -32,6 +32,7 @@ enum mtg_action{
 	MTG_ACT_TRANS,
 	MTG_ACT_DRAW,
 	MTG_ACT_SPAWN,
+	MTG_ACT_CTR,
 };
 
 enum mtg_turns{

@@ -48,7 +48,7 @@ void mtg_init(MtgGame_t *game){
 	if(sqlite3_open_v2(query,&game->conn,SQLITE_OPEN_CREATE|SQLITE_OPEN_READWRITE,NULL)!=SQLITE_OK)
 		exit(1);
 
-	sprintf(query,"CREATE TEMP TABLE Card(ID integer primary key, Zone integer, CardID integer, Player integer, Vis integer, Rot integer)");
+	sprintf(query,"CREATE TEMP TABLE Card(ID integer primary key, Zone integer, CardID integer, Player integer, Vis integer, Rot integer, Ctr integer default 0)");
 	sqlite3_exec(game->conn,query,NULL,NULL,NULL);
 }
 
@@ -421,6 +421,27 @@ void spawn_card(MtgGame_t *game, int id){
 	free(twoarr);
 }
 
+void set_counter(MtgGame_t *game, int id, int ctr){
+	char query[500];
+	int *twoarr;
+	int newlen;
+
+	sprintf(query,"UPDATE Card SET Ctr=%d WHERE ID=%d",ctr,id);
+	sqlite3_exec(game->conn,query,NULL,NULL,NULL);
+
+	sprintf(query,"%d",id);
+
+	twoarr=get_id_pairs(game->conn,query,4,10,&newlen);
+	twoarr[0]=newlen;
+	twoarr[1]=-MTG_ACT_CTR;
+	twoarr[2]=game->priority->index;
+	twoarr[3]=ctr;
+
+	msg_broad(game->priority,twoarr,newlen);
+
+	free(twoarr);
+}
+
 char* mtg_process_input(const int *in, int len, void *arg, int index){
 	MtgGame_t *game=(MtgGame_t*)arg;
 	PlayerList_t *ptr;
@@ -461,6 +482,8 @@ char* mtg_process_input(const int *in, int len, void *arg, int index){
 		case -MTG_ACT_SPAWN:
 			spawn_card(game,in[1]);
 			break;
+		case -MTG_ACT_CTR:
+			set_counter(game,in[1],in[2]);
 	}
 
 	if(passloop){
