@@ -553,6 +553,7 @@ void init_help(){
 	add_line(help_w,"T : Tap selected card",&i);
 	add_line(help_w,"c[0-9] : Transfer card control to player",&i);
 	add_line(help_w,"S[0-9][0-9] : Put into play an x/x token",&i);
+	add_line(help_w,"[+-] : Add/Remove a counter on a card",&i);
 }
 
 void cursor_down(){
