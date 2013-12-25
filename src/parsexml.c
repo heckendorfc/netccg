@@ -30,6 +30,7 @@ struct xmldata{
 	long bufalloc;
 	struct setlist *setlist;
 
+	int cid;
 	char cname[50];
 	char cset[50];
 	char crar[50];
@@ -106,6 +107,8 @@ startmeta(void *arg, const char *el, const char **attr)
 				if(sqlite3_bind_text(s,1,data->cname,-1,SQLITE_STATIC)!=SQLITE_OK)exit(2);
 				if(sqlite3_step(s)!=SQLITE_DONE)exit(2);
 				if(sqlite3_finalize(s)!=SQLITE_OK)exit(2);
+				
+				data->cid=sqlite3_last_insert_rowid(conn);
 
 			}
 		}
@@ -129,14 +132,21 @@ endmeta(void *arg, const char *el) {
 		int rint;
 
 		switch(data->crar[0]){
-			case 'C': rint=1;break;
-			case 'U': rint=2;break;
-			case 'R': rint=3;break;
+			case 'C':
+				rint=1;break;
+			case 'U':
+				rint=2;break;
+			case 'R':
+				rint=3;break;
+			case 'M':
+				rint=4;break;
+			default:
+				rint=0;break;
 		}
 
 		sprintf(query,"INSERT INTO CardSet(SetID,CardID,Rarity) SELECT ID,?,? FROM SetInfo WHERE Name=?");
 		if(sqlite3_prepare_v2(conn,query,255,&s,NULL)!=SQLITE_OK)exit(2);
-		if(sqlite3_bind_int64(s,1,sqlite3_last_insert_rowid(conn))!=SQLITE_OK)exit(2);
+		if(sqlite3_bind_int(s,1,data->cid)!=SQLITE_OK)exit(2);
 		if(sqlite3_bind_int(s,2,rint)!=SQLITE_OK)exit(2);
 		if(sqlite3_bind_text(s,3,data->cset,-1,SQLITE_STATIC)!=SQLITE_OK)exit(2);
 		if(sqlite3_step(s)!=SQLITE_DONE)exit(2);
