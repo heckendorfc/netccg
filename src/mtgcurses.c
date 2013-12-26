@@ -8,48 +8,15 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <string.h>
-#include <ncurses.h>
 #include <signal.h>
 
+#include "cursesui.h"
 #include "common.h"
 #include "mtg.h"
 
 #define CARD_PER_LINE 3
 
-#define TURN_HEIGHT 3
-#define TURN_WIDTH 50
-#define TURN_TGAP 0
-#define TURN_LGAP 6
-
-#define CARD_HEIGHT 1
-#define CARD_WIDTH 40
-#define CARD_HSPACE 5
-#define CARD_VSPACE 1
-#define CARD_LGAP 5
-#define CARD_TGAP (TURN_HEIGHT+TURN_TGAP+4)
-
-#define INFO_WIDTH 100
-#define INFO_HEIGHT 20
-#define INFO_TGAP (LINES-INFO_HEIGHT-1)
-#define INFO_LGAP 0
-
-#define HELP_WIDTH 45
-#define HELP_HEIGHT 20
-#define HELP_LGAP (INFO_WIDTH+5)
-#define HELP_TGAP (LINES-HELP_HEIGHT-1)
-
-#define CARD_COL ((COLS-CARD_LGAP)/(CARD_WIDTH+CARD_HSPACE))
-#define CARD_ROW ((LINES-CARD_TGAP-INFO_HEIGHT-CARD_VSPACE)/(CARD_HEIGHT+CARD_VSPACE))
-#define MAX_CARD_COL 6
-#define MAX_CARD_ROW 50
-
-#define DIVW_HEIGHT 1
-#define DIVW_WIDTH (CARD_COL*(CARD_WIDTH+CARD_HSPACE))
-#define DIVW_LGAP 3
-
-
 sqlite3 *cdb;
-pthread_mutex_t view_m;
 
 const char zone_letter[]={
 	'-', // blank
@@ -77,200 +44,11 @@ struct printer_s{
 	int count;
 };
 
-typedef struct card_t{
-	int id;
-	int gameid;
-	char name[40];
-	WINDOW *w;
-	int tap;
-}card_t;
-
-static card_t cards[MAX_CARD_ROW][MAX_CARD_COL];
-static WINDOW *div_w[MAX_CARD_ROW],*turns_w,*info_w,*zone_w,*log_w,*help_w;
-static int curx=0,cury=0;
-static int playerview;
-static int zoneview=MTG_ZONE_BATTLE;
+int playerview;
+int zoneview=MTG_ZONE_BATTLE;
+int page=0;
 
 static void finish(int sig);
-
-int set_short_card_cb(void *arg, int col_n, char **row, char **titles){
-	int *count=(int*)arg;
-	int i,j;
-	int tap;
-
-	i=(*count)/CARD_COL;
-	j=(*count)%CARD_COL;
-	sprintf(cards[i][j].name,"[%s %s %s/%s (%s)]",row[0],row[1],row[2],row[3],row[7]);
-	cards[i][j].id=strtol(row[4],NULL,10);
-	cards[i][j].gameid=strtol(row[5],NULL,10);
-	tap=cards[i][j].tap=strtol(row[6],NULL,10);
-
-	if(*count==CARD_COL*cury+curx)
-		wattron(cards[i][j].w,A_BOLD);
-	if(tap==MTG_ROT_TAPPED)
-		wattron(cards[i][j].w,A_UNDERLINE);
-
-	wmove(cards[i][j].w,0,0);
-	wprintw(cards[i][j].w,"%s",cards[i][j].name);
-	wrefresh(cards[i][j].w);
-
-	if(*count==CARD_COL*cury+curx)
-		wattroff(cards[i][j].w,A_BOLD);
-	if(tap==MTG_ROT_TAPPED)
-		wattroff(cards[i][j].w,A_UNDERLINE);
-
-	(*count)++;
-
-	return SQLITE_OK;
-}
-
-int card_info_cb(void *arg, int col_n, char **row, char **titles){
-	wmove(info_w,2,2);
-	wprintw(info_w,"%s %s %s/%s",row[0],row[1],row[2],row[3]);
-	wmove(info_w,3,2);
-	wprintw(info_w,"%s %s - %s",row[4],row[5],row[6]);
-	return SQLITE_OK;
-}
-
-void set_info(int *i, int len, int max, char *q, char *ptr){
-	if(len==0)
-		return;
-	do{
-		wmove(info_w,*i,2);
-		snprintf(q,max,"%s",ptr);
-		wprintw(info_w,"%s",q);
-		ptr+=max-1;
-		len-=max-1;
-		(*i)++;
-	}while(len>0);
-}
-
-int card_rule_cb(void *arg, int col_n, char **row, char **titles){
-	int *i=(int*)arg;
-	char *ptr,q[100];
-	int len;
-
-	len=strlen(row[0]);
-	ptr=row[0];
-	set_info(i,len,75,q,ptr);
-
-	len=strlen(row[1]);
-	ptr=row[1];
-	set_info(i,len,75,q,ptr);
-
-	(*i)++;
-
-	return SQLITE_OK;
-}
-
-void draw_div(int index, int z, int count){
-	int i;
-	/*
-	for(i=0;i<count;i++){
-		wmove(div_w[i],0,DIVW_WIDTH/2-2);
-		wprintw(div_w[i],"%s",zname[z]);
-		wrefresh(div_w[i]);
-	}
-	*/
-
-	for(i=0;i<count;i++){
-		whline(div_w[index+i],'-',DIVW_WIDTH);
-		wmove(div_w[index+i],0,DIVW_WIDTH/2-2);
-		wprintw(div_w[index+i],"%s",zname[z]);
-		wrefresh(div_w[index+i]);
-	}
-}
-
-void add_zone_view(int *pos, int zone){
-	char query[200];
-	int start=*pos;
-
-	sprintf(query,"SELECT Name,Cost,Pwr,Tgh,BasicCard.ID,GameCard.ID,Rot,Ctr FROM BasicCard, GameCard WHERE BasicCard.ID=GameCard.CardID AND Player=%d AND Zone=%d",playerview,zone);
-	sqlite3_exec(cdb,query,set_short_card_cb,pos,NULL);
-
-	start/=CARD_COL;
-	draw_div(start,zone,1);
-	*pos+=CARD_COL-((*pos)%CARD_COL);
-}
-
-void update_zone_view(){
-	char query[200];
-	int count=0;
-	int i,j;
-	int n;
-
-	pthread_mutex_lock(&view_m);
-	move(4,0);
-	printw("View: %d%c",playerview,zone_letter[zoneview]);
-
-	for(i=0;i<CARD_ROW;i++){
-		for(j=0;j<CARD_COL;j++){
-			cards[i][j].id=0;
-			werase(cards[i][j].w);
-			//wprintw(cards[i][j].w,"A");
-			wrefresh(cards[i][j].w);
-		}
-		werase(div_w[i]);
-		wrefresh(div_w[i]);
-	}
-
-
-	if(zoneview!=MTG_ZONE_HAND)
-		add_zone_view(&count,zoneview);
-	if(zoneview==MTG_ZONE_BATTLE)
-		add_zone_view(&count,MTG_ZONE_PLAY);
-	add_zone_view(&count,MTG_ZONE_HAND);
-
-/*
-	sprintf(query,"SELECT Name,Cost,Pwr,Tgh,BasicCard.ID,GameCard.ID,Rot FROM BasicCard, GameCard WHERE BasicCard.ID=GameCard.CardID AND Player=%d AND Zone=%d",playerview,zoneview);
-	sqlite3_exec(cdb,query,set_short_card_cb,&count,NULL);
-
-	if(count){
-		count=count/CARD_COL+1;
-		draw_div(0,zoneview,1);
-		if(zoneview!=MTG_ZONE_HAND)
-			draw_div(count,MTG_ZONE_HAND,1);
-		count=count*CARD_COL;
-	}
-	else{
-		draw_div(0,MTG_ZONE_HAND,1);
-	}
-
-	if(zoneview!=MTG_ZONE_HAND){
-		sprintf(query,"SELECT Name,Cost,Pwr,Tgh,BasicCard.ID,GameCard.ID,Rot FROM BasicCard, GameCard WHERE BasicCard.ID=GameCard.CardID AND Player=%d AND Zone=%d",playerview,MTG_ZONE_HAND);
-		sqlite3_exec(cdb,query,set_short_card_cb,&count,NULL);
-	}
-*/
-	werase(info_w);
-	box(info_w,0,0);
-
-	sprintf(query,"SELECT Name,Cost,Pwr,Tgh,TypeSuper,TypeCard,TypeSub FROM BasicCard WHERE ID=%d",cards[cury][curx].id);
-	sqlite3_exec(cdb,query,card_info_cb,NULL,NULL);
-
-	n=5;
-	sprintf(query,"SELECT Data,Hint FROM CardRule WHERE CardID=%d",cards[cury][curx].id);
-	sqlite3_exec(cdb,query,card_rule_cb,&n,NULL);
-
-	wrefresh(info_w);
-	pthread_mutex_unlock(&view_m);
-}
-
-void init_card_w(){
-	int i,j;
-
-	for(i=0;i<CARD_COL;i++){
-		for(j=0;j<CARD_ROW;j++){
-			cards[j][i].w=newwin(CARD_HEIGHT,CARD_WIDTH,j*(CARD_HEIGHT+CARD_VSPACE)+CARD_TGAP,i*(CARD_WIDTH+CARD_HSPACE)+CARD_LGAP);
-			//sprintf(cards[j][i].name,"wiogeh");
-			//wattron(cards[j][i].w,A_UNDERLINE);
-			//wattron(cards[j][i].w,A_BOLD);
-			//wprintw(cards[j][i].w,cards[j][i].name);
-			wrefresh(cards[j][i].w);
-			//wattroff(cards[j][i].w,A_BOLD);
-			//wattroff(cards[j][i].w,A_UNDERLINE);
-		}
-	}
-}
 
 void update_cards(char *query, int *arr, int len){
 	char q[200];
@@ -312,20 +90,13 @@ void* run_listen(void *arg){
 
 	write(sockfd, line, strlen(line));
 	read(sockfd, &ret, sizeof(ret));
-	pthread_mutex_lock(&view_m);
-	wmove(turns_w,1,1);
-	wprintw(turns_w,"result from server = %d", ret);
-	wrefresh(turns_w);
-	pthread_mutex_unlock(&view_m);
+	sprintf(line,"result from server = %d", ret);
+	print_turn(line);
 	//print_server_error(ret);
 
 	while((len=read(sockfd, line, LINE_LEN))>0){
 		line[len-1]=0;
-		pthread_mutex_lock(&view_m);
-		wmove(turns_w,1,1);
-		wprintw(turns_w,"+%s+",line);
-		wrefresh(turns_w);
-		pthread_mutex_unlock(&view_m);
+		print_turn(line);
 	};
 
 	close(sockfd);
@@ -505,16 +276,10 @@ int get_deck_array(int *arr,int id){
 	dst.arr=arr;
 	dst.size=0;
 
-	sprintf(query,"SELECT CardID FROM Deck WHERE DeckID=%d",id);
+	sprintf(query,"SELECT CardID FROM Deck JOIN Library ON Deck.LibraryID=Library.ID WHERE DeckID=%d",id);
 	sqlite3_exec(cdb,query,int_list_cb,&dst,NULL);
 
 	return dst.size;
-}
-
-void add_line(WINDOW *win, const char *line, int *i){
-	wmove(win,*i,2);
-	wprintw(win,"%s",line);
-	(*i)++;
 }
 
 int get_token_id(int p, int t){
@@ -535,63 +300,6 @@ int get_token_id(int p, int t){
 	sqlite3_exec(cdb,query,int_list_cb,&dst,NULL);
 
 	return id;
-}
-
-void init_help(){
-	int i=1;
-	add_line(help_w,"[0-9] : Switch player view",&i);
-	add_line(help_w,"Z[GHDPB] : Switch zone view",&i);
-	i++;
-	add_line(help_w,"= : Load deck",&i);
-	i++;
-	add_line(help_w,"p : Pass",&i);
-	add_line(help_w,"d : Done",&i);
-	i++;
-	add_line(help_w,"D : Draw",&i);
-	add_line(help_w,"V : Show selected card",&i);
-	add_line(help_w,"M[GDHPB] : Move card to zone",&i);
-	add_line(help_w,"T : Tap selected card",&i);
-	add_line(help_w,"c[0-9] : Transfer card control to player",&i);
-	add_line(help_w,"S[0-9][0-9] : Put into play an x/x token",&i);
-	add_line(help_w,"[+-] : Add/Remove a counter on a card",&i);
-}
-
-void cursor_down(){
-	int x,y;
-
-	for(y=cury+1;y<CARD_ROW;y++){
-		for(x=curx;x>=0;x--){
-			if(cards[y][x].id){
-				curx=x;
-				cury=y;
-				return;
-			}
-		}
-	}
-}
-
-void cursor_up(){
-	int x,y;
-
-	for(y=cury-1;y>=0;y--){
-		for(x=curx;x>=0;x--){
-			if(cards[y][x].id){
-				curx=x;
-				cury=y;
-				return;
-			}
-		}
-	}
-}
-
-void cursor_left(){
-	if(curx>0)
-		curx--;
-}
-
-void cursor_right(){
-	if(cards[cury][curx+1].id)
-		curx++;
 }
 
 int get_counter(int id){
@@ -659,52 +367,8 @@ int main(int argc, char *argv[])
 
 	(void) signal(SIGINT, finish);      /* arrange interrupts to terminate */
 
-	(void) initscr();      /* initialize the curses library */
-	keypad(stdscr, TRUE);  /* enable keyboard mapping */
-	//(void) nonl();         /* tell curses not to do NL->CR/NL on output */
-	(void) cbreak();       /* take input chars one at a time, no wait for \n */
-	noecho();
-	//(void) echo();         /* echo input - in color */
+	setup_ui();
 
-	move(1,0);
-	printw("Turn:");
-	refresh();
-	turns_w=newwin(TURN_HEIGHT,TURN_WIDTH,TURN_TGAP,TURN_LGAP);
-	box(turns_w,0,0);
-	wmove(turns_w,1,1);
-	wprintw(turns_w,"zzz");
-	wrefresh(turns_w);
-
-	for(num=0;num<CARD_ROW;num++){
-		div_w[num]=newwin(DIVW_HEIGHT,DIVW_WIDTH,num*(CARD_HEIGHT+CARD_VSPACE)+CARD_TGAP-1,DIVW_LGAP);
-		//whline(div_w[num],'-',DIVW_WIDTH);
-		//wmove(div_w[num],0,DIVW_WIDTH/2-2);
-		//wprintw(div_w[num],"%s","HAND");
-		wrefresh(div_w[num]);
-	}
-
-/*
-	log_w=newwin(10,100,LINES-33-1,0);
-	box(log_w,0,0);
-	wrefresh(log_w);
-*/
-	help_w=newwin(HELP_HEIGHT,HELP_WIDTH,HELP_TGAP,HELP_LGAP);
-	box(help_w,0,0);
-	init_help();
-	wrefresh(help_w);
-
-	info_w=newwin(INFO_HEIGHT,INFO_WIDTH,INFO_TGAP,INFO_LGAP);
-	box(info_w,0,0);
-	wrefresh(info_w);
-/*
-	zone_w=newwin(LINES-26,COLS-1,5,0);
-	wrefresh(zone_w);
-*/
-	init_card_w();
-
-	move(LINES-1,0);
-
-	pthread_mutex_init(&view_m,NULL);
 	pthread_create(&lowthread,NULL,run_low,argv);
 	pthread_create(&listenthread,NULL,run_listen,argv);
 
@@ -716,7 +380,7 @@ int main(int argc, char *argv[])
 
 		if(c>='0' && c<='9'){
 			playerview=c-'0';
-			curx=cury=0;
+			setcursor(0,0);
 			update_zone_view();
 			continue;
 		}
@@ -724,7 +388,7 @@ int main(int argc, char *argv[])
 		if(c=='Z' || c=='z'){
 			int d=getch();
 			zoneview=get_zone(d);
-			curx=cury=0;
+			setcursor(0,0);
 			update_zone_view();
 			continue;
 		}
@@ -767,18 +431,18 @@ int main(int argc, char *argv[])
 			case 'V':
 				olen=2;
 				outarr[0]=-MTG_ACT_VIS;
-				outarr[1]=cards[cury][curx].gameid;// line[1]!=0?strtol(line+1,NULL,10):1;
+				outarr[1]=selected_gameid();// line[1]!=0?strtol(line+1,NULL,10):1;
 				break;
 			case 'M':
 				olen=3;
 				outarr[0]=-MTG_ACT_MOVE;
 				outarr[1]=get_zone(getch());
-				outarr[2]=cards[cury][curx].gameid;
+				outarr[2]=selected_gameid();
 				break;
 			case 'T':
 				olen=2;
 				outarr[0]=-MTG_ACT_TAP;
-				outarr[1]=cards[cury][curx].gameid;// line[1]!=0?strtol(line+1,NULL,10):1;
+				outarr[1]=selected_gameid();// line[1]!=0?strtol(line+1,NULL,10):1;
 				break;
 			case 'c':
 				olen=3;
@@ -786,7 +450,7 @@ int main(int argc, char *argv[])
 				//outarr[1]=strtol(line+1,&lp,10);
 				//outarr[2]=strtol(lp+1,NULL,10);
 				outarr[1]=getch();
-				outarr[2]=cards[cury][curx].gameid;
+				outarr[2]=selected_gameid();
 				break;
 			case 'S':
 				olen=2;
@@ -798,13 +462,13 @@ int main(int argc, char *argv[])
 			case '+':
 				olen=3;
 				outarr[0]=-MTG_ACT_CTR;
-				outarr[1]=cards[cury][curx].gameid;
+				outarr[1]=selected_gameid();
 				outarr[2]=get_counter(outarr[1])+1;
 				break;
 			case '-':
 				olen=3;
 				outarr[0]=-MTG_ACT_CTR;
-				outarr[1]=cards[cury][curx].gameid;
+				outarr[1]=selected_gameid();
 				outarr[2]=get_counter(outarr[1])-1;
 				break;
 			default:
@@ -817,8 +481,6 @@ int main(int argc, char *argv[])
 		update_zone_view();
 	}
 
-	pthread_mutex_destroy(&view_m);
-
 	finish(0);               /* we're done */
 
 	return 0;
@@ -826,7 +488,7 @@ int main(int argc, char *argv[])
 
 static void finish(int sig)
 {
-	endwin();
+	end_ui();
 
 	/* do your non-curses wrapup here */
 

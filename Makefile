@@ -10,7 +10,8 @@ PROGRAM3=mtgcli
 PROGRAM4=spectator
 PROGRAM5=admin
 PROGRAM6=mtgcurses
-ALL_PROGRAMS=$(PROGRAM1) $(PROGRAM2) $(PROGRAM5) $(PROGRAM6)
+PROGRAM7=mtgdeck
+ALL_PROGRAMS=$(PROGRAM1) $(PROGRAM2) $(PROGRAM5) $(PROGRAM6) $(PROGRAM7)
 
 ## Output .o files
 PROGRAM1_OBS=\
@@ -36,7 +37,12 @@ PROGRAM5_OBS=\
 			src/amain.o
 
 PROGRAM6_OBS=\
-			 src/mtgcurses.o
+			src/mtgcurses.o\
+			src/cursesui.o
+
+PROGRAM7_OBS=\
+			src/cursesui.o\
+			src/mtgdeck.o
 
 all: $(ALL_PROGRAMS)
 
@@ -58,5 +64,8 @@ $(PROGRAM5): $(PROGRAM5_OBS)
 $(PROGRAM6): $(PROGRAM6_OBS)
 	$(CC) $(LDFLAGS) $@ $^ $(LIBS) -lcurses
 
+$(PROGRAM7): $(PROGRAM7_OBS)
+	$(CC) $(LDFLAGS) $@ $^ $(LIBS) -lcurses
+
 clean:
-	rm -f $(PROGRAM1_OBS) $(PROGRAM2_OBS) $(PROGRAM3_OBS) $(PROGRAM4_OBS) $(PROGRAM5_OBS) $(PROGRAM6_OBS) $(ALL_PROGRAMS)
+	rm -f $(PROGRAM1_OBS) $(PROGRAM2_OBS) $(PROGRAM3_OBS) $(PROGRAM4_OBS) $(PROGRAM5_OBS) $(PROGRAM6_OBS) $(PROGRAM7_OBS) $(ALL_PROGRAMS)

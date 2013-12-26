@@ -40,7 +40,7 @@ CardID integer
 CREATE TABLE Deck(
 ID integer primary key,
 DeckID integer,
-CardID integer
+LibraryID integer
 );
 
 CREATE TABLE DeckInfo(
