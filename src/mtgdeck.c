@@ -14,6 +14,33 @@
 #include "common.h"
 #include "mtg.h"
 
+#define NUM_FILTER 5
+#define FILTER_SIZE 50
+
+enum filter_types{
+	TYPE_NAME=0,
+	TYPE_COST,
+	TYPE_SUPER,
+	TYPE_CARD,
+	TYPE_SUB,
+	TYPE_FINAL
+};
+
+const char *typename[]={
+	"Name",
+	"Cost",
+	"TypeSuper",
+	"TypeCard",
+	"TypeSub"
+};
+
+typedef struct Filter_t{
+	int type;
+	char data[50];
+}Filter_t;
+
+static Filter_t filterlist[NUM_FILTER];
+
 sqlite3 *cdb;
 
 const char zone_letter[]={
@@ -73,9 +100,31 @@ void update_deck_count(){
 	print_turn(query);
 }
 
+void general_help(){
+	int i=0;
+	int count=1;
+	char line[60];
+
+	add_help_line("T : Toggle selected card",&count);
+	add_help_line("S : Save deck",&count);
+	add_help_line("F[string] : Filter list",&count);
+	add_help_line("D[0-4] : Delete filter",&count);
+	count++;
+	add_help_line("FILTERS:",&count);
+
+	for(i=0;i<NUM_FILTER;i++){
+		if(filterlist[i].type>=0){
+			sprintf(line,"%d : %s=%s",i,typename[filterlist[i].type],filterlist[i].data);
+		}
+		else{
+			sprintf(line,"%d : ",i);
+		}
+		add_help_line(line,&count);
+	}
+}
+
 void save_deck(int id){
 	char query[200];
-	int count=1;
 
 	if(id<1){
 		sprintf(query,"SELECT max(DeckID)+1 FROM Deck");
@@ -93,10 +142,83 @@ void save_deck(int id){
 	print_turn(query);
 }
 
+void build_filter(char *ret, Filter_t *list){
+	int i;
+
+	*ret=0;
+
+	for(i=0;i<NUM_FILTER;i++){
+		if(list[i].type>=0){
+			strcat(ret,"AND ");
+			strcat(ret,typename[list[i].type]);
+			strcat(ret," LIKE \"%");
+			strcat(ret,list[i].data);
+			strcat(ret,"%\" ");
+		}
+	}
+}
+
+void filter_types(){
+	int i;
+	char line[50];
+	int count=1;
+
+	for(i=0;i<TYPE_FINAL;i++){
+		sprintf(line,"%d : %s",i,typename[i]);
+		add_help_line(line,&count);
+	}
+}
+
+void delete_filter(int i){
+	if(i>=0 && i<TYPE_FINAL){
+		filterlist[i].type=-1;
+		*filterlist[i].data=0;
+	}
+	init_help(general_help);
+}
+
+void get_filter(){
+	int type;
+	int i,j;
+	int empty;
+
+	for(i=0;i<NUM_FILTER;i++)
+		if(filterlist[i].type<0)
+			break;
+	if(i==NUM_FILTER)
+		return;
+
+	empty=i;
+
+	init_help(filter_types);
+
+	print_prompt("[F]ilterType?");
+	type=getch()-'0';
+	if(type>=0 && type<TYPE_FINAL)
+		filterlist[empty].type=type;
+
+	print_prompt("[F]ilterData?");
+
+	j=0;
+	do{
+		i=getch();
+		if(i=='\n')
+			break;
+		filterlist[empty].data[j++]=i;
+		filterlist[empty].data[j]=0;
+		print_prompt(filterlist[empty].data);
+	}while(1);
+
+	init_help(general_help);
+	print_prompt("");
+}
+
 int main(int argc, char *argv[])
 {
 	char query[300];
+	char filter[200];
 	int did;
+	int i;
 
 	(void) signal(SIGINT, finish);      /* arrange interrupts to terminate */
 
@@ -119,16 +241,32 @@ int main(int argc, char *argv[])
 		sqlite3_exec(cdb,query,NULL,NULL,NULL);
 	}
 
+	*filter=0;
+	for(i=0;i<NUM_FILTER;i++){
+		filterlist[i].type=-1;
+		filterlist[i].data[0]=0;
+	}
+
 	setup_ui();
+
+	init_help(general_help);
 
 	update_deck_count();
 
 	while(1){
-		update_zone_view();
+		update_zone_view(filter);
 
 		int c=getch();
 
 		switch(c){
+			case 'F':
+				get_filter();
+				break;
+			case 'D':
+				print_prompt("[D]eleteFilter?");
+				delete_filter(getch()-'0');
+				print_prompt("");
+				break;
 			case 'S':
 			case 's':
 				save_deck(did);
@@ -151,6 +289,8 @@ int main(int argc, char *argv[])
 				cursor_right();
 				break;
 		}
+
+		build_filter(filter,filterlist);
 	}
 
 	finish(0);               /* we're done */

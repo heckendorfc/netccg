@@ -227,7 +227,7 @@ void* run_low(void *arg){
 				if(iptr[0]-ioff>0){
 					update_cards(query,iptr+ioff,iptr[0]-ioff);
 					print_cards(outf,iptr+ioff,iptr[0]-ioff);
-					update_zone_view();
+					update_zone_view("");
 				}
 				ilen-=iptr[0];
 				iptr+=iptr[0];
@@ -316,6 +316,25 @@ int get_counter(int id){
 	return ret;
 }
 
+void general_help(){
+	int i=1;
+	add_help_line("[0-9] : Switch player view",&i);
+	add_help_line("Z[GHDPB] : Switch zone view",&i);
+	i++;
+	add_help_line("= : Load deck",&i);
+	i++;
+	add_help_line("p : Pass",&i);
+	add_help_line("d : Done",&i);
+	i++;
+	add_help_line("D : Draw",&i);
+	add_help_line("V : Show selected card",&i);
+	add_help_line("M[GDHPB] : Move card to zone",&i);
+	add_help_line("T : Tap selected card",&i);
+	add_help_line("c[0-9] : Transfer card control to player",&i);
+	add_help_line("S[0-9][0-9] : Put into play an x/x token",&i);
+	add_help_line("[+-] : Add/Remove a counter on a card",&i);
+}
+
 int main(int argc, char *argv[])
 {
 	int num = 0;
@@ -369,6 +388,8 @@ int main(int argc, char *argv[])
 
 	setup_ui();
 
+	init_help(general_help);
+
 	pthread_create(&lowthread,NULL,run_low,argv);
 	pthread_create(&listenthread,NULL,run_listen,argv);
 
@@ -381,15 +402,18 @@ int main(int argc, char *argv[])
 		if(c>='0' && c<='9'){
 			playerview=c-'0';
 			setcursor(0,0);
-			update_zone_view();
+			update_zone_view("");
 			continue;
 		}
 
 		if(c=='Z' || c=='z'){
-			int d=getch();
+			int d;
+			print_prompt("[Z]one?");
+			d=getch();
+			print_prompt("");
 			zoneview=get_zone(d);
 			setcursor(0,0);
-			update_zone_view();
+			update_zone_view("");
 			continue;
 		}
 
@@ -435,9 +459,11 @@ int main(int argc, char *argv[])
 				break;
 			case 'M':
 				olen=3;
+				print_prompt("[M]ove?");
 				outarr[0]=-MTG_ACT_MOVE;
 				outarr[1]=get_zone(getch());
 				outarr[2]=selected_gameid();
+				print_prompt("");
 				break;
 			case 'T':
 				olen=2;
@@ -446,16 +472,20 @@ int main(int argc, char *argv[])
 				break;
 			case 'c':
 				olen=3;
+				print_prompt("[c]ontrol?");
 				outarr[0]=-MTG_ACT_TRANS;
 				//outarr[1]=strtol(line+1,&lp,10);
 				//outarr[2]=strtol(lp+1,NULL,10);
 				outarr[1]=getch();
 				outarr[2]=selected_gameid();
+				print_prompt("");
 				break;
 			case 'S':
 				olen=2;
+				print_prompt("[S]pawn??");
 				outarr[0]=-MTG_ACT_SPAWN;
 				outarr[1]=get_token_id(getch(),getch());
+				print_prompt("");
 				if(outarr[1]>=0)
 					olen=0;
 				break;
@@ -478,7 +508,7 @@ int main(int argc, char *argv[])
 		}
 		if(!local && olen && write(sockfd,outarr,sizeof(*outarr)*olen)<0)
 			break;
-		update_zone_view();
+		update_zone_view("");
 	}
 
 	finish(0);               /* we're done */

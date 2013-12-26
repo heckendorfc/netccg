@@ -171,12 +171,12 @@ static void draw_div(int index, int z, int count){
 	}
 }
 
-static void add_zone_view(int *pos, int zone){
-	char query[300];
+static void add_zone_view(int *pos, int zone, const char *filter){
+	char query[500];
 	int start=*pos;
 	const int maxnum=CARD_COL*CARD_ROW;
 
-	sprintf(query,"SELECT Name,Cost,Pwr,Tgh,BasicCard.ID,GameCard.ID,Rot,Ctr FROM BasicCard, GameCard WHERE BasicCard.ID=GameCard.CardID AND Player=%d AND Zone=%d ORDER BY Name LIMIT %d OFFSET %d",playerview,zone,maxnum-start,maxnum*page);
+	sprintf(query,"SELECT Name,Cost,Pwr,Tgh,BasicCard.ID,GameCard.ID,Rot,Ctr FROM BasicCard, GameCard WHERE BasicCard.ID=GameCard.CardID AND Player=%d AND Zone=%d %s ORDER BY Name LIMIT %d OFFSET %d",playerview,zone,filter,maxnum-start,maxnum*page);
 	sqlite3_exec(cdb,query,set_short_card_cb,pos,NULL);
 
 	start/=CARD_COL;
@@ -184,7 +184,7 @@ static void add_zone_view(int *pos, int zone){
 	*pos+=CARD_COL-((*pos)%CARD_COL);
 }
 
-void update_zone_view(){
+void update_zone_view(const char *filter){
 	char query[200];
 	int count=0;
 	int i,j;
@@ -207,11 +207,11 @@ void update_zone_view(){
 
 
 	if(zoneview!=MTG_ZONE_HAND)
-		add_zone_view(&count,zoneview);
+		add_zone_view(&count,zoneview,filter);
 	if(zoneview==MTG_ZONE_BATTLE)
-		add_zone_view(&count,MTG_ZONE_PLAY);
+		add_zone_view(&count,MTG_ZONE_PLAY,filter);
 	if(zoneview>0)
-		add_zone_view(&count,MTG_ZONE_HAND);
+		add_zone_view(&count,MTG_ZONE_HAND,filter);
 
 	werase(info_w);
 	box(info_w,0,0);
@@ -250,23 +250,17 @@ void add_line(WINDOW *win, const char *line, int *i){
 	(*i)++;
 }
 
-void init_help(){
-	int i=1;
-	add_line(help_w,"[0-9] : Switch player view",&i);
-	add_line(help_w,"Z[GHDPB] : Switch zone view",&i);
-	i++;
-	add_line(help_w,"= : Load deck",&i);
-	i++;
-	add_line(help_w,"p : Pass",&i);
-	add_line(help_w,"d : Done",&i);
-	i++;
-	add_line(help_w,"D : Draw",&i);
-	add_line(help_w,"V : Show selected card",&i);
-	add_line(help_w,"M[GDHPB] : Move card to zone",&i);
-	add_line(help_w,"T : Tap selected card",&i);
-	add_line(help_w,"c[0-9] : Transfer card control to player",&i);
-	add_line(help_w,"S[0-9][0-9] : Put into play an x/x token",&i);
-	add_line(help_w,"[+-] : Add/Remove a counter on a card",&i);
+void add_help_line(const char *line, int *i){
+	add_line(help_w,line,i);
+}
+
+void init_help(void (*f)()){
+	pthread_mutex_lock(&view_m);
+	werase(help_w);
+	box(help_w,0,0);
+	f();
+	wrefresh(help_w);
+	pthread_mutex_unlock(&view_m);
 }
 
 void cursor_down(){
@@ -354,7 +348,6 @@ void setup_ui(){
 */
 	help_w=newwin(HELP_HEIGHT,HELP_WIDTH,HELP_TGAP,HELP_LGAP);
 	box(help_w,0,0);
-	init_help();
 	wrefresh(help_w);
 
 	info_w=newwin(INFO_HEIGHT,INFO_WIDTH,INFO_TGAP,INFO_LGAP);
@@ -392,5 +385,16 @@ void setcursor(int x, int y){
 
 int selected_gameid(){
 	return cards[cury][curx].gameid;
+}
+
+void print_prompt(const char *p){
+	pthread_mutex_lock(&view_m);
+	move(LINES-1,0);
+	clrtoeol();
+	move(LINES-1,1);
+	if(*p)
+		printw("Input: %s",p);
+	refresh();
+	pthread_mutex_unlock(&view_m);
 }
 
