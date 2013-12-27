@@ -17,10 +17,10 @@
 #define TURN_LGAP 6
 
 #define CARD_HEIGHT 1
-#define CARD_WIDTH 40
-#define CARD_HSPACE 5
+#define CARD_WIDTH 41
+#define CARD_HSPACE 4
 #define CARD_VSPACE 1
-#define CARD_LGAP 5
+#define CARD_LGAP 4
 #define CARD_TGAP (TURN_HEIGHT+TURN_TGAP+4)
 
 #define INFO_WIDTH 100
@@ -95,12 +95,15 @@ static int set_short_card_cb(void *arg, int col_n, char **row, char **titles){
 	cards[i][j].gameid=strtol(row[5],NULL,10);
 	tap=cards[i][j].tap=strtol(row[6],NULL,10);
 
-	if(*count==CARD_COL*cury+curx)
+	if(*count==CARD_COL*cury+curx){
 		wattron(cards[i][j].w,A_BOLD);
+		wmove(cards[i][j].w,0,0);
+		wprintw(cards[i][j].w,"%c",'*');
+	}
 	if(tap==MTG_ROT_TAPPED)
 		wattron(cards[i][j].w,A_UNDERLINE);
 
-	wmove(cards[i][j].w,0,0);
+	wmove(cards[i][j].w,0,1);
 	wprintw(cards[i][j].w,"%s",cards[i][j].name);
 	wrefresh(cards[i][j].w);
 
@@ -372,6 +375,8 @@ void end_ui(){
 
 void print_turn(const char *t){
 	pthread_mutex_lock(&view_m);
+	werase(turns_w);
+	box(turns_w,0,0);
 	wmove(turns_w,1,1);
 	wprintw(turns_w,"%s",t);
 	wrefresh(turns_w);

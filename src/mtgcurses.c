@@ -245,15 +245,12 @@ void* run_low(void *arg){
 						ioff=3;
 						break;
 					case -MTG_ACT_VIS:
-						sprintf(query,"INSERT OR IGNORE INTO GameCard (CardID,ID,Zone,Rot,Player,Vis) VALUES(%%d,%%d,%d,%d,%d,%d)",MTG_ZONE_HAND,MTG_ROT_UNTAPPED,iptr[2],MTG_VIS_PUBLIC);
+						sprintf(query,"UPDATE GameCard SET Vis=%d WHERE CardID=%%d AND ID=%%d",MTG_VIS_PUBLIC);
 						fprintf(outf,"%d shows cards:\n",iptr[2]);
 						ioff=3;
 						break;
 					case -MTG_ACT_MOVE:
-						if(iptr[3]==MTG_ZONE_DECK)
-							sprintf(query,"DELETE FROM GameCard WHERE CardID=%%d AND ID=%%d");
-						else
-							sprintf(query,"UPDATE GameCard SET CardID=%%d, Zone=%d WHERE ID=%%d",iptr[3]);
+						sprintf(query,"UPDATE GameCard SET CardID=%%d, Zone=%d WHERE ID=%%d",iptr[3]);
 						fprintf(outf,"%d moves (to [%c]) cards :\n",iptr[2],zone_letter[iptr[3]]);
 						ioff=4;
 						break;
@@ -295,7 +292,6 @@ void* run_low(void *arg){
 					ilen-=iptr[0];
 					iptr+=iptr[0];
 				}
-
 
 				fflush(outf);
 			}
