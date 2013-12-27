@@ -30,7 +30,7 @@ const char zone_letter[]={
 
 const char *zname[]={
 	"",
-	"DRAW",
+	"DECK",
 	"HAND",
 	"GRVE",
 	"PLAY",
@@ -130,6 +130,62 @@ void print_cards(FILE *outf,int *arr, int len){
 		fprintf(outf,"\n");
 }
 
+void handle_one(FILE *outf, char *query, int *arr, int len){
+	if(len>0){
+		update_cards(query,arr,len);
+		print_cards(outf,arr,len);
+		update_zone_view("");
+	}
+}
+
+int handle_under(FILE *outf, int lowfd, char *query, int *arr, int startlen, int off, int maxlen){
+	int ilen=startlen-off;
+	int total=arr[0]-off;
+	int carry=0;
+	int *ap=arr+off;
+	int readlen=maxlen;
+
+	do{
+		ilen+=carry;
+		carry=0;
+		ap=arr+off;
+
+		if(ilen&1){
+			carry=arr[ilen-1];
+			ilen--;
+			readlen=maxlen-1;
+			ap=arr+off+1;
+		}
+
+		if(ilen>=total){
+			ilen=total;
+			carry+=ilen-total;
+		}
+
+		update_cards(query,ap,ilen);
+		print_cards(outf,ap,ilen);
+
+		total-=ilen;
+
+		if(total<=0){
+			memmove(arr,ap+ilen,carry);
+			break;
+		}
+		off=0;
+
+		if(carry){
+			arr[0]=carry;
+			ap=arr+1;
+		}
+		else
+			ap=arr;
+	}while((ilen=read(lowfd,ap,sizeof(*ap)*readlen))>0);
+
+	update_zone_view("");
+
+	return carry;
+}
+
 void* run_low(void *arg){
 	char **argv=(char**)arg;
 	char line[500];
@@ -144,6 +200,7 @@ void* run_low(void *arg){
 	struct sockaddr_in address;
 	char query[200];
 	int ind;
+	int carry=0;
 
 	sprintf(query,"/tmp/mtglog_XXXXXX");
 	mktemp(query);
@@ -219,18 +276,27 @@ void* run_low(void *arg){
 						fprintf(outf,"%d sets counter to %d on cards :\n",iptr[2],iptr[3]);
 						ioff=4;
 						break;
+					case -MTG_ACT_INIT_DECK:
+						ioff=2;
+						fprintf(outf,"Loaded %d cards:\n",(iptr[0]-ioff)/2);
+						sprintf(query,"INSERT OR IGNORE INTO GameCard (CardID,ID,Zone,Rot,Player,Vis) VALUES(%%d,%%d,%d,%d,%d,%d)",MTG_ZONE_DECK,MTG_ROT_UNTAPPED,ind,MTG_VIS_HIDDEN);
+						break;
 					default:
-						sprintf(query,"INSERT OR IGNORE INTO GameCard (CardID,ID,Zone,Rot,Player,Vis) VALUES(%%d,%%d,%d,%d,%d,%d)",MTG_ZONE_HAND,MTG_ROT_UNTAPPED,ind,MTG_VIS_PUBLIC);
+						sprintf(query,"UPDATE GameCard SET Zone=%d, Vis=%d WHERE CardID=%%d AND ID=%%d",MTG_ZONE_HAND,MTG_VIS_PRIVATE);
 						ioff=2;
 						break;
 				}
-				if(iptr[0]-ioff>0){
-					update_cards(query,iptr+ioff,iptr[0]-ioff);
-					print_cards(outf,iptr+ioff,iptr[0]-ioff);
-					update_zone_view("");
+				if(ilen-iptr[0]<0){
+					carry=handle_under(outf,lowfd,query,iptr,ilen,ioff,inlen);
+					ilen=carry;
 				}
-				ilen-=iptr[0];
-				iptr+=iptr[0];
+				else{
+					handle_one(outf,query,iptr+ioff,iptr[0]-ioff);
+					ilen-=iptr[0];
+					iptr+=iptr[0];
+				}
+
+
 				fflush(outf);
 			}
 		}

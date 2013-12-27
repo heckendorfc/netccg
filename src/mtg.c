@@ -38,6 +38,34 @@ void msg_direct(PlayerList_t *player, int *arr, int len){
 	write(player->replyfd,arr,len*sizeof(*arr));
 }
 
+char* build_int_string(const int *arr, int len){
+	char *ret;
+	char *ptr;
+	int i;
+
+	INIT_MEM(ret,(11*len));
+
+	ptr=ret;
+	for(i=0;i<len;i++){
+		sprintf(ptr,"%d,",arr[i]);
+		while(*ptr)ptr++;
+	}
+	ptr--;
+	*ptr=0;
+
+	return ret;
+}
+
+int int_list_cb(void *arg, int col_n, char **row, char **title){
+	struct int_list *dst=(struct int_list*)arg;
+
+	dst->arr[dst->size]=strtol(row[0],NULL,10);
+	dst->arr[dst->size+1]=strtol(row[1],NULL,10);
+	dst->size+=2;
+
+	return SQLITE_OK;
+}
+
 void mtg_init(MtgGame_t *game){
 	// setup database
 	char query[500];
@@ -88,26 +116,31 @@ void init_deck(MtgGame_t *game, int index, const int *arr, const int len){
 	int i;
 	char query[500];
 	PlayerList_t *ptr;
+	int *twoarr;
+	struct int_list dst;
+	int off;
 
 	for(i=0;i<len;i++){
 		sprintf(query,"INSERT INTO Card(Zone,CardID,Player,Vis,Rot) VALUES (%d,%d,%d,%d,%d)",MTG_ZONE_DECK,arr[i],index,MTG_VIS_HIDDEN,MTG_ROT_UNTAPPED);
 		sqlite3_exec(game->conn,query,NULL,NULL,NULL);
 	}
 
-	/*
-	ptr=game->players;
-	while(ptr){
-		if(ptr->index==index){
-			ptr->ready=MTG_TURN_INIT;
-			do{
-				game->players=game->players->next;
-			}while(game->players->ready==MTG_TURN_INIT && game->players!=ptr);
-			game->priority=game->players;
-			return;
-		}
-		ptr=ptr->next;
-	}
-	*/
+
+	off=2;
+
+	INIT_MEM(twoarr,(len*2+off+1));
+
+	dst.arr=twoarr;
+	dst.size=off;
+
+	sprintf(query,"SELECT CardID,ID FROM Card WHERE Zone=%d",MTG_ZONE_DECK);
+	sqlite3_exec(game->conn,query,int_list_cb,&dst,NULL);
+
+	twoarr[0]=dst.size;
+	twoarr[1]=-MTG_ACT_INIT_DECK;
+
+	//msg_broad(game->priority,broadarr,4);
+	msg_direct(game->priority,twoarr,dst.size);
 }
 
 int get_next_game_state(int state){
@@ -196,34 +229,6 @@ void set_player_done(MtgGame_t *game, int index){
 	//set_player_states(game,game->state);
 	set_player_state(game,index,get_next_game_state(game->state));
 	set_next_priority(game);
-}
-
-char* build_int_string(const int *arr, int len){
-	char *ret;
-	char *ptr;
-	int i;
-
-	INIT_MEM(ret,(11*len));
-
-	ptr=ret;
-	for(i=0;i<len;i++){
-		sprintf(ptr,"%d,",arr[i]);
-		while(*ptr)ptr++;
-	}
-	ptr--;
-	*ptr=0;
-
-	return ret;
-}
-
-int int_list_cb(void *arg, int col_n, char **row, char **title){
-	struct int_list *dst=(struct int_list*)arg;
-
-	dst->arr[dst->size]=strtol(row[0],NULL,10);
-	dst->arr[dst->size+1]=strtol(row[1],NULL,10);
-	dst->size+=2;
-
-	return SQLITE_OK;
 }
 
 int* get_id_pairs(sqlite3 *conn, char *args, int off, int len, int *size){

@@ -55,7 +55,7 @@ const char zone_letter[]={
 
 const char *zname[]={
 	"ARCH",
-	"DRAW",
+	"DECK",
 	"HAND",
 	"GRVE",
 	"PLAY",
