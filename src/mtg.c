@@ -133,7 +133,7 @@ void init_deck(MtgGame_t *game, int index, const int *arr, const int len){
 	dst.arr=twoarr;
 	dst.size=off;
 
-	sprintf(query,"SELECT CardID,ID FROM Card WHERE Zone=%d",MTG_ZONE_DECK);
+	sprintf(query,"SELECT CardID,ID FROM Card WHERE Zone=%d AND Player=%d",MTG_ZONE_DECK,index);
 	sqlite3_exec(game->conn,query,int_list_cb,&dst,NULL);
 
 	twoarr[0]=dst.size;

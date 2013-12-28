@@ -151,9 +151,9 @@ void build_filter(char *ret, Filter_t *list){
 		if(list[i].type>=0){
 			strcat(ret,"AND ");
 			strcat(ret,typename[list[i].type]);
-			strcat(ret," LIKE \"%");
+			strcat(ret," GLOB \"*");
 			strcat(ret,list[i].data);
-			strcat(ret,"%\" ");
+			strcat(ret,"*\" ");
 		}
 	}
 }
@@ -261,6 +261,7 @@ int main(int argc, char *argv[])
 		switch(c){
 			case 'F':
 				get_filter();
+				page=0;
 				break;
 			case 'D':
 				print_prompt("[D]eleteFilter?");
@@ -287,6 +288,12 @@ int main(int argc, char *argv[])
 				break;
 			case KEY_RIGHT:
 				cursor_right();
+				break;
+			case KEY_NPAGE:
+				page++;
+				break;
+			case KEY_PPAGE:
+				page--;
 				break;
 		}
 
